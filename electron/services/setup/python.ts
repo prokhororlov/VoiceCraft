@@ -52,6 +52,27 @@ function runCommand(command: string, args: string[], options: { cwd?: string; ti
   })
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+async function removeDirectoryWithRetries(targetPath: string): Promise<void> {
+  let lastError: unknown
+
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    try {
+      fs.rmSync(targetPath, { recursive: true, force: true })
+      return
+    } catch (error) {
+      lastError = error
+      await sleep(attempt * 750)
+    }
+  }
+
+  const message = lastError instanceof Error ? lastError.message : String(lastError)
+  throw new Error(`Python environment is locked and cannot be replaced: ${targetPath}. Close VoiceCraft/TTS/Python processes and try again. ${message}`)
+}
+
 // Embedded Python configuration - using Python 3.11 for Coqui TTS compatibility
 // Coqui TTS 0.22.0 requires Python >=3.9.0,<3.12
 const EMBEDDED_PYTHON_VERSION = '3.11.9'
@@ -316,7 +337,7 @@ export async function copyPythonForEngine(
 
     // Remove existing directory if corrupt
     if (existsSync(targetPath)) {
-      fs.rmSync(targetPath, { recursive: true, force: true })
+      await removeDirectoryWithRetries(targetPath)
     }
 
     // Create target directory

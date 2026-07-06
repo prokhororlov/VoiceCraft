@@ -1,0 +1,22 @@
+{
+  "id": "ws_82e2e388",
+  "name": "VoiceCraft",
+  "slug": "voicecraft",
+  "defaults": {
+    "model": "claude-opus-4-6",
+    "permissionMode": "allow-all",
+    "cyclablePermissionModes": [
+      "safe",
+      "ask",
+      "allow-all"
+    ],
+    "thinkingLevel": "think",
+    "enabledSourceSlugs": [],
+    "workingDirectory": "D:\\Desktop\\test"
+  },
+  "localMcpServers": {
+    "enabled": true
+  },
+  "createdAt": 1769301030136,
+  "updatedAt": 1771251941840
+}

@@ -47,9 +47,10 @@ export interface GPUInfo {
 export interface AvailableAccelerators {
   cpu: true
   cuda: GPUInfo
+  directml: GPUInfo
 }
 
-export type AcceleratorType = 'cpu' | 'cuda'
+export type AcceleratorType = 'cpu' | 'cuda' | 'directml'
 
 export interface AcceleratorConfig {
   accelerator: AcceleratorType

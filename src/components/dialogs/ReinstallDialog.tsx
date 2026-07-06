@@ -7,7 +7,7 @@ import { useI18n } from '@/i18n'
 
 interface ReinstallConfirmDialogProps {
   engine: 'silero' | 'coqui'
-  accelerator: 'cuda'
+  accelerator: 'cuda' | 'directml'
   availableAccelerators: AcceleratorInfo | null
   isCheckingToolkit: boolean
   onConfirm: () => void
@@ -27,7 +27,12 @@ export function ReinstallConfirmDialog({
   onOpenExternal,
 }: ReinstallConfirmDialogProps) {
   const { t } = useI18n()
-  const isToolkitMissing = availableAccelerators?.cuda.toolkitMissing
+  const isDirectMl = accelerator === 'directml'
+  const isToolkitMissing = accelerator === 'cuda' && availableAccelerators?.cuda.toolkitMissing
+  const title = isDirectMl ? 'AMD DirectML Installation' : t.reinstall.cudaInstallation
+  const description = isDirectMl
+    ? `AMD GPU: ${availableAccelerators?.directml.name || 'DirectML'}`
+    : t.reinstall.cudaRequired
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
@@ -35,7 +40,7 @@ export function ReinstallConfirmDialog({
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-lg">
             <Zap className="h-5 w-5 text-primary" />
-            {t.reinstall.cudaInstallation}
+            {title}
           </CardTitle>
           <CardDescription>
             {engine === 'silero' ? 'Silero TTS' : 'Coqui XTTS-v2'}
@@ -44,7 +49,7 @@ export function ReinstallConfirmDialog({
         <CardContent className="space-y-4">
           <div className="text-sm text-muted-foreground space-y-2">
             <p>
-              {t.reinstall.cudaRequired}
+              {description}
             </p>
 
             {isToolkitMissing && (

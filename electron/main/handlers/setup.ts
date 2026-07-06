@@ -49,6 +49,7 @@ export function registerSetupHandlers() {
 
   ipcMain.handle('install-silero', async (event, accelerator: AcceleratorType = 'cpu') => {
     try {
+      await stopTTSServer()
       const result = await installSilero((progress) => {
         event.sender.send('setup-progress', progress)
       }, accelerator)
@@ -79,6 +80,7 @@ export function registerSetupHandlers() {
 
   ipcMain.handle('install-coqui', async (event, accelerator: AcceleratorType = 'cpu') => {
     try {
+      await stopTTSServer()
       const result = await installCoqui((progress) => {
         event.sender.send('setup-progress', progress)
       }, accelerator)
@@ -223,7 +225,7 @@ export function registerSetupHandlers() {
     return await getEstimatedDownloadSize()
   })
 
-  ipcMain.handle('check-gpu-toolkit', async (_event, accelerator: 'cpu' | 'cuda') => {
+  ipcMain.handle('check-gpu-toolkit', async (_event, accelerator: AcceleratorType) => {
     const { checkGPUToolkit } = await import('../../services/setup.js')
     return checkGPUToolkit(accelerator)
   })

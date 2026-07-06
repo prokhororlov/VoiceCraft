@@ -53,9 +53,42 @@ export async function checkNvidiaGPU(): Promise<GPUInfo> {
   return { available: false }
 }
 
+// Check for AMD Radeon GPU (DirectML support on Windows)
+export async function checkAmdGPU(): Promise<GPUInfo> {
+  if (process.platform !== 'win32') {
+    return { available: false }
+  }
+
+  try {
+    const { stdout } = await execAsync(
+      'powershell -NoProfile -Command "Get-CimInstance -ClassName Win32_VideoController | Where-Object Name -Match \'AMD|Radeon\' | Select-Object -First 1 -Property Name, AdapterRAM | ConvertTo-Json"',
+      { timeout: 15000 }
+    )
+    const text = stdout.trim()
+    if (!text) {
+      return { available: false }
+    }
+
+    const data = JSON.parse(text)
+    if (data && data.Name) {
+      const vram = data.AdapterRAM ? Math.round(data.AdapterRAM / (1024 * 1024)) : undefined
+      return {
+        available: true,
+        name: data.Name,
+        vram
+      }
+    }
+  } catch {
+    // No AMD GPU found
+  }
+
+  return { available: false }
+}
+
 // Get all available accelerators
 export async function getAvailableAccelerators(): Promise<AvailableAccelerators> {
   const cuda = await checkNvidiaGPU()
+  const directml = await checkAmdGPU()
 
   // Check if required toolkit is installed
   const cudaToolkit = checkGPUToolkit('cuda')
@@ -69,6 +102,11 @@ export async function getAvailableAccelerators(): Promise<AvailableAccelerators>
       toolkitMissing: cuda.available && !cudaToolkit.available,
       toolkitMessage: cudaToolkit.message,
       toolkitUrl: cudaToolkit.downloadUrl
+    },
+    directml: {
+      ...directml,
+      available: directml.available,
+      toolkitMissing: false
     }
   }
 }
@@ -122,6 +160,16 @@ export function checkGPUToolkit(accelerator: AcceleratorType): { available: bool
     return { available: true }
   }
 
+  if (accelerator === 'directml') {
+    if (process.platform !== 'win32') {
+      return {
+        available: false,
+        message: 'DirectML is available only on Windows'
+      }
+    }
+    return { available: true }
+  }
+
   // For CUDA, check if CUDA Toolkit is installed
   if (accelerator === 'cuda') {
     const cudaPath = process.env.CUDA_PATH
@@ -158,6 +206,10 @@ export async function reinstallSileroWithAccelerator(
   accelerator: AcceleratorType,
   onProgress: (progress: ReinstallProgress) => void
 ): Promise<{ success: boolean; error?: string }> {
+  if (accelerator === 'directml') {
+    return { success: false, error: 'DirectML acceleration is supported for Coqui XTTS-v2 only.' }
+  }
+
   onProgress({ stage: 'installing', message: 'Устанавливаем Silero...', progress: 0 })
 
   // Install Silero to accelerator-specific folder (silero-cpu, silero-cuda)

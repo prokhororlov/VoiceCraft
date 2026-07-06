@@ -65,7 +65,7 @@ export function getInstalledAccelerators(engine: 'silero' | 'coqui'): Accelerato
   const resourcesPath = getResourcesPath()
   const installed: AcceleratorType[] = []
 
-  const accelerators: AcceleratorType[] = ['cpu', 'cuda']
+  const accelerators: AcceleratorType[] = ['cpu', 'cuda', 'directml']
   for (const acc of accelerators) {
     const enginePath = path.join(resourcesPath, `${engine}-${acc}`)
     const configPath = path.join(enginePath, 'accelerator.json')

@@ -36,7 +36,7 @@ import { checkGPUToolkit } from './gpu'
 const execAsync = promisify(exec)
 
 // PyTorch URLs for different accelerators
-const PYTORCH_INDEX_URLS: Record<AcceleratorType, string> = {
+const PYTORCH_INDEX_URLS: Partial<Record<AcceleratorType, string>> = {
   cpu: 'https://download.pytorch.org/whl/cpu',
   cuda: 'https://download.pytorch.org/whl/cu124'  // CUDA 12.4 for latest PyTorch
 }
@@ -814,7 +814,7 @@ export async function installCoqui(
     }
   }
 
-  // Use accelerator-specific path (coqui-cpu, coqui-cuda)
+  // Use accelerator-specific path (coqui-cpu, coqui-cuda, coqui-directml)
   const coquiPath = getCoquiPathForAccelerator(accelerator)
 
   // Import engine-specific Python functions
@@ -868,8 +868,8 @@ export async function installCoqui(
     const targetPython = enginePython
 
     // Install PyTorch with selected accelerator - range 5% to 40%
-    const acceleratorLabel = accelerator === 'cuda' ? 'CUDA' : 'CPU'
-    const pytorchSize = accelerator === 'cuda' ? '~2.3 GB' : '~200 MB'
+    const acceleratorLabel = accelerator === 'cuda' ? 'CUDA' : accelerator === 'directml' ? 'DirectML' : 'CPU'
+    const pytorchSize = accelerator === 'cuda' ? '~2.3 GB' : accelerator === 'directml' ? '~250 MB' : '~200 MB'
     onProgress({
       stage: 'coqui',
       progress: scaleProgress(8),
@@ -877,7 +877,9 @@ export async function installCoqui(
     })
 
     // Build pip install command based on accelerator
-    const pytorchPackages = 'torch==2.5.1 torchaudio==2.5.1'
+    const pytorchPackages = accelerator === 'directml'
+      ? 'torch-directml'
+      : 'torch==2.5.1 torchaudio==2.5.1'
     const indexUrl = PYTORCH_INDEX_URLS[accelerator]
     const extraArgs: string[] = []
 
@@ -934,6 +936,41 @@ export async function installCoqui(
       return {
         success: false,
         error: 'Failed to install PyTorch. Please check your internet connection and try again.'
+      }
+    }
+
+    if (accelerator === 'directml') {
+      onProgress({
+        stage: 'coqui',
+        progress: scaleProgress(40),
+        details: 'Installing DirectML-compatible torchaudio...'
+      })
+
+      const torchaudioResult = await runPipWithProgress(
+        targetPython,
+        'torchaudio==2.4.1',
+        {
+          timeout: 300000,
+          onProgress: (info) => {
+            let details = 'Installing torchaudio...'
+            if (info.phase === 'downloading' && info.percentage !== undefined) {
+              details = `Downloading ${info.package}: ${info.percentage}%`
+            }
+            onProgress({
+              stage: 'coqui',
+              progress: scaleProgress(40),
+              details
+            })
+          }
+        }
+      )
+
+      if (!torchaudioResult.success) {
+        console.error('torchaudio installation error:', torchaudioResult.error)
+        return {
+          success: false,
+          error: 'Failed to install DirectML-compatible torchaudio.'
+        }
       }
     }
 
@@ -1103,7 +1140,10 @@ export async function installCoqui(
     let lastError = ''
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
-        const { stdout } = await execAsync(`"${targetPython}" -c "from TTS.api import TTS; print('OK')"`, { timeout: 60000 })
+        const verifyCommand = accelerator === 'directml'
+          ? `import torch; torch.inference_mode = torch.no_grad; import torch_directml; count=torch_directml.device_count() if hasattr(torch_directml,'device_count') else 1; idx=0; name=torch_directml.device_name(0); [globals().update(idx=i,name=torch_directml.device_name(i)) for i in range(count) if 'AMD' in torch_directml.device_name(i).upper() or 'RADEON' in torch_directml.device_name(i).upper()]; assert 'AMD' in name.upper() or 'RADEON' in name.upper(), name; d=torch_directml.device(idx); x=torch.ones((16,16), device=d); y=x @ x; from TTS.api import TTS; print('DIRECTML:' + name); print('OK')`
+          : `from TTS.api import TTS; print('OK')`
+        const { stdout } = await execAsync(`"${targetPython}" -c "${verifyCommand}"`, { timeout: 60000 })
         if (stdout.includes('OK')) {
           verifySuccess = true
           break
@@ -1141,6 +1181,7 @@ def _patched_load(*a, **kw):
         kw['weights_only'] = False
     return _orig_load(*a, **kw)
 torch.load = _patched_load
+torch.inference_mode = torch.no_grad
 
 # Simple progress tracking for model download
 class ProgressTracker:

@@ -75,14 +75,18 @@ interface GPUInfo {
   available: boolean
   name?: string
   vram?: number
+  toolkitMissing?: boolean
+  toolkitMessage?: string
+  toolkitUrl?: string
 }
 
 interface AvailableAccelerators {
   cpu: true
   cuda: GPUInfo
+  directml: GPUInfo
 }
 
-type AcceleratorType = 'cpu' | 'cuda'
+type AcceleratorType = 'cpu' | 'cuda' | 'directml'
 
 interface AcceleratorConfig {
   accelerator: AcceleratorType

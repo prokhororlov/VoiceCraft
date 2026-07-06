@@ -110,7 +110,7 @@ function App() {
   const [isInstallingCoqui, setIsInstallingCoqui] = useState(false)
   const [coquiInstallProgress, setCoquiInstallProgress] = useState('')
   const [coquiInstallPercent, setCoquiInstallPercent] = useState(0)
-  const [coquiInstallAccelerator, setCoquiInstallAccelerator] = useState<'cpu' | 'cuda'>('cpu')
+  const [coquiInstallAccelerator, setCoquiInstallAccelerator] = useState<'cpu' | 'cuda' | 'directml'>('cpu')
 
   // Piper
   const [piperInstalled, setPiperInstalled] = useState(false)
@@ -136,7 +136,7 @@ function App() {
   const [coquiAccelerator, setCoquiAccelerator] = useState<AcceleratorConfig | null>(null)
   const [isReinstalling, setIsReinstalling] = useState<'silero' | 'coqui' | null>(null)
   const [reinstallProgress, setReinstallProgress] = useState<ReinstallProgress | null>(null)
-  const [showReinstallConfirm, setShowReinstallConfirm] = useState<{ engine: 'silero' | 'coqui'; accelerator: 'cuda' } | null>(null)
+  const [showReinstallConfirm, setShowReinstallConfirm] = useState<{ engine: 'silero' | 'coqui'; accelerator: 'cuda' | 'directml' } | null>(null)
   const [isCheckingToolkit, setIsCheckingToolkit] = useState(false)
   const [sileroGpuPopoverOpen, setSileroGpuPopoverOpen] = useState(false)
   const [coquiGpuPopoverOpen, setCoquiGpuPopoverOpen] = useState(false)
@@ -241,6 +241,11 @@ function App() {
 
         const accelerators = await window.electronAPI.getAvailableAccelerators()
         setAvailableAccelerators(accelerators)
+        if (accelerators.directml.available) {
+          setCoquiInstallAccelerator('directml')
+        } else if (accelerators.cuda.available) {
+          setCoquiInstallAccelerator('cuda')
+        }
 
         if (deps.silero) {
           const sileroAcc = await window.electronAPI.getCurrentSileroAccelerator()
@@ -570,7 +575,7 @@ function App() {
     }
   }
 
-  const handleReinstallWithAccelerator = async (engine: 'silero' | 'coqui', accelerator: 'cuda') => {
+  const handleReinstallWithAccelerator = async (engine: 'silero' | 'coqui', accelerator: 'cuda' | 'directml') => {
     if (!window.electronAPI) return
 
     setShowReinstallConfirm(null)

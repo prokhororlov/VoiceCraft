@@ -77,14 +77,18 @@ export interface GPUInfo {
   available: boolean
   name?: string
   vram?: number
+  toolkitMissing?: boolean
+  toolkitMessage?: string
+  toolkitUrl?: string
 }
 
 export interface AvailableAccelerators {
   cpu: true
   cuda: GPUInfo
+  directml: GPUInfo
 }
 
-export type AcceleratorType = 'cpu' | 'cuda'
+export type AcceleratorType = 'cpu' | 'cuda' | 'directml'
 
 export interface AcceleratorConfig {
   accelerator: AcceleratorType
@@ -298,7 +302,7 @@ const electronAPI = {
   getEstimatedDownloadSize: (): Promise<{ size: number; includeSilero: boolean }> =>
     ipcRenderer.invoke('get-estimated-download-size'),
 
-  checkGPUToolkit: (accelerator: 'cpu' | 'cuda'): Promise<{
+  checkGPUToolkit: (accelerator: AcceleratorType): Promise<{
     available: boolean
     error?: string
     message?: string

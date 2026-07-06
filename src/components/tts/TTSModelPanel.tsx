@@ -16,7 +16,7 @@ interface TTSModelPanelProps {
   onGpuPopoverChange: (open: boolean) => void
   onLoadModel: (engine: 'silero' | 'coqui', language?: string) => void
   onUnloadModel: (engine: 'silero' | 'coqui' | 'all', language?: string) => void
-  onShowReinstallConfirm: (engine: 'silero' | 'coqui', accelerator: 'cuda') => void
+  onShowReinstallConfirm: (engine: 'silero' | 'coqui', accelerator: 'cuda' | 'directml') => void
 }
 
 export function TTSModelPanel({
@@ -37,9 +37,14 @@ export function TTSModelPanel({
   const { t } = useI18n()
   const isDisabled = isLoadingModel !== null || isAnyInstalling || isReinstalling
 
-  const canUpgradeToGpu =
+  const canUpgradeToCuda =
     (accelerator?.accelerator === 'cpu' || !accelerator) &&
     (availableAccelerators?.cuda.available || availableAccelerators?.cuda.name)
+  const canUpgradeToDirectMl =
+    provider === 'coqui' &&
+    (accelerator?.accelerator === 'cpu' || !accelerator) &&
+    Boolean(availableAccelerators?.directml.available || availableAccelerators?.directml.name)
+  const canUpgradeToGpu = canUpgradeToCuda || canUpgradeToDirectMl
 
   if (provider === 'silero') {
     return (
@@ -58,7 +63,7 @@ export function TTSModelPanel({
             <div className="flex items-center gap-1">
               <div
                 className={`flex items-center gap-1.5 px-2 py-1 text-xs font-medium rounded cursor-default ${
-                  accelerator?.accelerator === 'cuda'
+                  accelerator?.accelerator === 'cuda' || accelerator?.accelerator === 'directml'
                     ? 'bg-green-500/20 text-green-600 dark:text-green-400'
                     : 'bg-muted/50 text-muted-foreground'
                 }`}
@@ -171,7 +176,7 @@ export function TTSModelPanel({
           <div className="flex items-center gap-1">
             <div
               className={`flex items-center gap-1.5 px-2 py-1 text-xs font-medium rounded ${
-                accelerator?.accelerator === 'cuda'
+                accelerator?.accelerator === 'cuda' || accelerator?.accelerator === 'directml'
                   ? 'bg-green-500/20 text-green-600 dark:text-green-400'
                   : 'bg-muted/50 text-muted-foreground'
               }`}
@@ -194,21 +199,42 @@ export function TTSModelPanel({
                   <div className="text-[11px] text-muted-foreground mb-3">
                     {t.gpu.coquiSpeedup}
                   </div>
-                  <button
-                    className="w-full flex items-center gap-2 text-xs p-2 rounded border border-amber-500/30 bg-amber-500/5 hover:bg-amber-500/10 transition-colors text-left cursor-pointer"
-                    onClick={() => {
-                      onGpuPopoverChange(false)
-                      onShowReinstallConfirm('coqui', 'cuda')
-                    }}
-                  >
-                    <Zap className="h-3.5 w-3.5 text-amber-500" />
-                    <div className="flex-1">
-                      <div className="font-medium">NVIDIA CUDA</div>
-                      <div className="text-[10px] text-muted-foreground">
-                        {availableAccelerators?.cuda.name} · ~4.5 GB
-                      </div>
-                    </div>
-                  </button>
+                  <div className="space-y-2">
+                    {canUpgradeToDirectMl && (
+                      <button
+                        className="w-full flex items-center gap-2 text-xs p-2 rounded border border-amber-500/30 bg-amber-500/5 hover:bg-amber-500/10 transition-colors text-left cursor-pointer"
+                        onClick={() => {
+                          onGpuPopoverChange(false)
+                          onShowReinstallConfirm('coqui', 'directml')
+                        }}
+                      >
+                        <Zap className="h-3.5 w-3.5 text-amber-500" />
+                        <div className="flex-1">
+                          <div className="font-medium">AMD DirectML</div>
+                          <div className="text-[10px] text-muted-foreground">
+                            {availableAccelerators?.directml.name} · ~2.7 GB
+                          </div>
+                        </div>
+                      </button>
+                    )}
+                    {canUpgradeToCuda && (
+                      <button
+                        className="w-full flex items-center gap-2 text-xs p-2 rounded border border-amber-500/30 bg-amber-500/5 hover:bg-amber-500/10 transition-colors text-left cursor-pointer"
+                        onClick={() => {
+                          onGpuPopoverChange(false)
+                          onShowReinstallConfirm('coqui', 'cuda')
+                        }}
+                      >
+                        <Zap className="h-3.5 w-3.5 text-amber-500" />
+                        <div className="flex-1">
+                          <div className="font-medium">NVIDIA CUDA</div>
+                          <div className="text-[10px] text-muted-foreground">
+                            {availableAccelerators?.cuda.name} · ~4.5 GB
+                          </div>
+                        </div>
+                      </button>
+                    )}
+                  </div>
                 </PopoverContent>
               </Popover>
             )}

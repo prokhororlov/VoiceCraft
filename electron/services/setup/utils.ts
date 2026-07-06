@@ -592,6 +592,30 @@ def _patched_load(*a, **kw):
         kw['weights_only'] = False
     return _orig_load(*a, **kw)
 torch.load = _patched_load
+torch.inference_mode = torch.no_grad
+
+def select_device():
+    try:
+        import torch_directml
+        count = torch_directml.device_count() if hasattr(torch_directml, "device_count") else 1
+        selected_index = 0
+        selected_name = torch_directml.device_name(0)
+        for index in range(count):
+            name = torch_directml.device_name(index)
+            if "AMD" in name.upper() or "RADEON" in name.upper():
+                selected_index = index
+                selected_name = name
+                break
+        dml_device = torch_directml.device(selected_index)
+        probe = torch.ones((8, 8), device=dml_device)
+        _ = probe + probe
+        if "AMD" in selected_name.upper() or "RADEON" in selected_name.upper():
+            print(f"Using DirectML device: {selected_name}", file=sys.stderr)
+            return dml_device
+    except Exception as e:
+        print(f"DirectML unavailable: {e}", file=sys.stderr)
+
+    return "cuda" if torch.cuda.is_available() else "cpu"
 
 def main():
     parser = argparse.ArgumentParser()
@@ -610,7 +634,7 @@ def main():
     elif lang in ['en-us', 'en-gb', 'en_us', 'en_gb', 'en']:
         lang = 'en'
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = select_device()
     tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(device)
 
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
@@ -656,20 +680,22 @@ def _patched_load(*a, **kw):
         kw['weights_only'] = False
     return _orig_load(*a, **kw)
 torch.load = _patched_load
+torch.inference_mode = torch.no_grad
 
 app = Flask(__name__)
 models = {"silero": {"ru": None, "en": None}, "coqui": None}
 coqui_lock = threading.Lock()
 
 def detect_device():
-    """Detect best available compute device. Priority: CUDA > CPU"""
-    device_info = {"device": "cpu", "backend": "cpu", "gpu_name": None}
+    """Detect best available compute device. Priority: CUDA > DirectML > CPU"""
+    device_info = {"device": "cpu", "device_label": "cpu", "backend": "cpu", "gpu_name": None}
 
     # Try CUDA (NVIDIA)
     if torch.cuda.is_available():
         try:
             device_info = {
                 "device": "cuda",
+                "device_label": "cuda",
                 "backend": "cuda",
                 "gpu_name": torch.cuda.get_device_name(0)
             }
@@ -677,13 +703,40 @@ def detect_device():
         except:
             pass
 
+    # Try DirectML (AMD Radeon on Windows)
+    try:
+        import torch_directml
+        count = torch_directml.device_count() if hasattr(torch_directml, "device_count") else 1
+        selected_index = 0
+        selected_name = torch_directml.device_name(0)
+        for index in range(count):
+            name = torch_directml.device_name(index)
+            if "AMD" in name.upper() or "RADEON" in name.upper():
+                selected_index = index
+                selected_name = name
+                break
+        dml_device = torch_directml.device(selected_index)
+        probe = torch.ones((8, 8), device=dml_device)
+        _ = probe + probe
+        if "AMD" in selected_name.upper() or "RADEON" in selected_name.upper():
+            device_info = {
+                "device": dml_device,
+                "device_label": f"directml:{selected_index}",
+                "backend": "directml",
+                "gpu_name": selected_name
+            }
+            return device_info
+    except Exception:
+        pass
+
     return device_info
 
 _device_info = detect_device()
 device = _device_info["device"]
+device_label = _device_info["device_label"]
 backend = _device_info["backend"]
 gpu_name = _device_info["gpu_name"]
-print(f"Using device: {device}, backend: {backend}, GPU: {gpu_name}", file=sys.stderr)
+print(f"Using device: {device_label}, backend: {backend}, GPU: {gpu_name}", file=sys.stderr)
 
 def get_memory_gb():
     return psutil.Process().memory_info().rss / (1024**3)
@@ -717,9 +770,10 @@ def load_silero_model(lang):
     model_name = 'v5_ru' if lang == 'ru' else 'v3_en'
     print(f"Loading Silero {model_name}...", file=sys.stderr)
     model, _ = torch.hub.load('snakers4/silero-models', 'silero_tts', language=lang, speaker=model_name)
-    model.to(torch.device(device))
+    silero_device = torch.device("cpu") if backend == "directml" else torch.device(device)
+    model.to(silero_device)
     models["silero"][lang] = model
-    print(f"Silero {lang} loaded on {device}. Memory: {get_memory_gb():.2f} GB", file=sys.stderr)
+    print(f"Silero {lang} loaded on {silero_device}. Memory: {get_memory_gb():.2f} GB", file=sys.stderr)
 
 def generate_silero(text, speaker, lang, rate=1.0, sr=48000):
     if models["silero"].get(lang) is None:
@@ -741,7 +795,7 @@ def load_coqui_model():
     print("Loading Coqui XTTS-v2...", file=sys.stderr)
     from TTS.api import TTS
     models["coqui"] = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(device)
-    print(f"Coqui loaded on {device}. Memory: {get_memory_gb():.2f} GB", file=sys.stderr)
+    print(f"Coqui loaded on {device_label}. Memory: {get_memory_gb():.2f} GB", file=sys.stderr)
 
 def generate_coqui(text, speaker, lang):
     l = lang.lower()
@@ -769,9 +823,14 @@ def status():
         "silero": {"ru_loaded": models["silero"]["ru"] is not None, "en_loaded": models["silero"]["en"] is not None},
         "coqui": {"loaded": models["coqui"] is not None},
         "memory_gb": round(get_memory_gb(), 2),
-        "device": device,
+        "device": device_label,
         "backend": backend,
-        "gpu_name": gpu_name
+        "gpu_name": gpu_name,
+        "preferred_device": device_label,
+        "available_devices": [
+            {"id": "cpu", "name": "CPU", "available": True, "description": "Central Processing Unit"},
+            {"id": device_label, "name": gpu_name or backend.upper(), "available": backend != "cpu", "description": backend.upper()}
+        ]
     })
 
 @app.route("/load", methods=["POST"])
@@ -843,7 +902,7 @@ if __name__ == "__main__":
     p.add_argument("--port", type=int, default=5050)
     p.add_argument("--host", type=str, default="127.0.0.1")
     args = p.parse_args()
-    print(f"TTS Server on {args.host}:{args.port}, device={device}", file=sys.stderr)
+    print(f"TTS Server on {args.host}:{args.port}, device={device_label}", file=sys.stderr)
     app.run(host=args.host, port=args.port, threaded=True)
 `
 }
