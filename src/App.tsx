@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Languages, Settings, Play, X, Download, Loader2, AlertTriangle } from 'lucide-react'
+import { Card, CardContent } from '@/components/ui/card'
+import { Settings, Play, Loader2, AlertTriangle, FolderOpen } from 'lucide-react'
 
 import { SetupScreen } from '@/components/SetupScreen'
 import { TitleBar } from '@/components/TitleBar'
@@ -19,6 +19,7 @@ import { ReinstallConfirmDialog, ReinstallProgressDialog } from '@/components/di
 import { UpdateModal } from '@/components/dialogs/UpdateModal'
 import { SettingsDialog } from '@/components/dialogs/SettingsDialog'
 import { PlaybackSettingsContent } from '@/components/settings/PlaybackSettings'
+import { CustomVoiceModal, type CustomVoiceMetadata } from '@/components/dialogs/CustomVoiceModal'
 
 import { useTheme, useWindowState, useUpdates } from '@/hooks'
 import { PROVIDER_ICONS } from '@/constants'
@@ -76,6 +77,7 @@ function App() {
   const [pitch, setPitch] = useState([1.0])
   const [timeStretch, setTimeStretch] = useState([1.0])
   const [sentencePause, setSentencePause] = useState([0.0])
+  const [ruaccentEnabled, setRuaccentEnabled] = useState(false)
   const [previewText, setPreviewText] = useState(() => getDefaultPreviewText('en'))
   const [settingsOpen, setSettingsOpen] = useState(false)
 
@@ -89,6 +91,7 @@ function App() {
   const [progress, setProgress] = useState(0)
   const [status, setStatus] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [lastOutputPath, setLastOutputPath] = useState<string | null>(null)
 
   // ==================== ELEVENLABS STATE ====================
   const [elevenLabsApiKey, setElevenLabsApiKey] = useState<string>('')
@@ -129,6 +132,13 @@ function App() {
   const [voiceInstallProgress, setVoiceInstallProgress] = useState<number>(0)
   const [installingRHVoice, setInstallingRHVoice] = useState<string | null>(null)
   const [rhvoiceInstallProgress, setRHVoiceInstallProgress] = useState<number>(0)
+
+  // ==================== VOICE CLONING STATE (Coqui) ====================
+  const [voiceCloningEnabled, setVoiceCloningEnabled] = useState(false)
+  const [customVoices, setCustomVoices] = useState<CustomVoiceMetadata[]>([])
+  const [selectedCustomVoice, setSelectedCustomVoice] = useState<string>('')
+  const [showCustomVoiceModal, setShowCustomVoiceModal] = useState(false)
+  const [editingCustomVoice, setEditingCustomVoice] = useState<CustomVoiceMetadata | null>(null)
 
   // ==================== GPU ACCELERATOR STATE ====================
   const [availableAccelerators, setAvailableAccelerators] = useState<AcceleratorInfo | null>(null)
@@ -263,6 +273,22 @@ function App() {
     loadApiKey()
     checkProviders()
   }, [])
+
+  // Load custom voices when Coqui is selected
+  useEffect(() => {
+    const loadCustomVoices = async () => {
+      if (!window.electronAPI) return
+      if (selectedProvider === 'coqui') {
+        try {
+          const voices = await window.electronAPI.getCustomVoices()
+          setCustomVoices(voices)
+        } catch (err) {
+          console.error('Failed to load custom voices:', err)
+        }
+      }
+    }
+    loadCustomVoices()
+  }, [selectedProvider])
 
   // Load voices
   useEffect(() => {
@@ -412,7 +438,12 @@ function App() {
   }
 
   const handleConvert = async () => {
-    if (!window.electronAPI || !bookContent || !selectedVoice) return
+    // For voice cloning mode, check custom voice; otherwise check regular voice
+    const voiceToUse = voiceCloningEnabled && selectedProvider === 'coqui'
+      ? selectedCustomVoice
+      : selectedVoice
+
+    if (!window.electronAPI || !bookContent || !voiceToUse) return
 
     const safeFilename = sanitizeFilename(bookContent.title)
     const outputPath = await window.electronAPI.saveFileDialog(`${safeFilename}.mp3`)
@@ -436,9 +467,19 @@ function App() {
       options.timeStretch = timeStretch[0]
     }
 
+    // Add ruaccent option for Silero
+    if (selectedProvider === 'silero' && ruaccentEnabled) {
+      options.useRuaccent = true
+    }
+
+    // Add custom voice ID for voice cloning
+    if (voiceCloningEnabled && selectedProvider === 'coqui' && selectedCustomVoice) {
+      options.customVoiceId = selectedCustomVoice
+    }
+
     const result = await window.electronAPI.convertToSpeech(
       bookContent.fullText,
-      selectedVoice,
+      voiceToUse,
       outputPath,
       options
     )
@@ -447,8 +488,10 @@ function App() {
 
     if (!result.success) {
       setError(result.error || 'Conversion failed')
+      setLastOutputPath(null)
     } else {
       setStatus(t.conversion.completed)
+      setLastOutputPath(outputPath)
     }
   }
 
@@ -460,7 +503,12 @@ function App() {
   }
 
   const handlePreviewVoice = async () => {
-    if (!window.electronAPI || !selectedVoice || isPreviewing) return
+    // For voice cloning mode, check custom voice; otherwise check regular voice
+    const voiceToUse = voiceCloningEnabled && selectedProvider === 'coqui'
+      ? selectedCustomVoice
+      : selectedVoice
+
+    if (!window.electronAPI || !voiceToUse || isPreviewing) return
 
     if (previewAudio) {
       previewAudio.pause()
@@ -488,7 +536,17 @@ function App() {
         options.timeStretch = timeStretch[0]
       }
 
-      const result = await window.electronAPI.previewVoice(previewText, selectedVoice, options)
+      // Add ruaccent option for Silero
+      if (selectedProvider === 'silero' && ruaccentEnabled) {
+        options.useRuaccent = true
+      }
+
+      // Add custom voice ID for voice cloning
+      if (voiceCloningEnabled && selectedProvider === 'coqui' && selectedCustomVoice) {
+        options.customVoiceId = selectedCustomVoice
+      }
+
+      const result = await window.electronAPI.previewVoice(previewText, voiceToUse, options)
 
       if (previewAbortedRef.current) return
 
@@ -533,6 +591,39 @@ function App() {
       setPreviewAudio(null)
     }
     setIsPreviewing(false)
+  }
+
+  // ==================== CUSTOM VOICE HANDLERS ====================
+  const handleAddCustomVoice = () => {
+    setEditingCustomVoice(null)
+    setShowCustomVoiceModal(true)
+  }
+
+  const handleEditCustomVoice = (voice: CustomVoiceMetadata) => {
+    setEditingCustomVoice(voice)
+    setShowCustomVoiceModal(true)
+  }
+
+  const handleCustomVoiceSaved = (voice: CustomVoiceMetadata) => {
+    setCustomVoices(prev => {
+      const exists = prev.find(v => v.id === voice.id)
+      if (exists) {
+        return prev.map(v => v.id === voice.id ? voice : v)
+      }
+      return [...prev, voice]
+    })
+    setSelectedCustomVoice(voice.id)
+    setShowCustomVoiceModal(false)
+    setEditingCustomVoice(null)
+  }
+
+  const handleCustomVoiceDeleted = (voiceId: string) => {
+    setCustomVoices(prev => prev.filter(v => v.id !== voiceId))
+    if (selectedCustomVoice === voiceId) {
+      setSelectedCustomVoice('')
+    }
+    setShowCustomVoiceModal(false)
+    setEditingCustomVoice(null)
   }
 
   const handleLoadModel = async (engine: 'silero' | 'coqui', language?: string) => {
@@ -901,7 +992,7 @@ function App() {
       />
 
       <div className="flex-1 overflow-auto p-4">
-        <div className="max-w-4xl mx-auto space-y-4">
+        <div className={`max-w-4xl mx-auto ${!file ? 'h-full flex items-center justify-center' : 'space-y-4'}`}>
           {/* File Drop Zone */}
           <FileDropZone
             file={file}
@@ -915,13 +1006,7 @@ function App() {
           {/* Settings */}
           {file && bookContent && (
             <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <Languages className="h-4 w-4" />
-                  {t.common.settings}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4 pb-6">
+              <CardContent className="space-y-4 py-6">
                 {/* Provider Selection */}
                 <ProviderSelector
                   providers={availableProviders}
@@ -1042,6 +1127,13 @@ function App() {
                       onInstallRHVoice={handleInstallRHVoiceVoice}
                       settingsOpen={settingsOpen}
                       onSettingsOpenChange={setSettingsOpen}
+                      voiceCloningEnabled={voiceCloningEnabled}
+                      onVoiceCloningChange={setVoiceCloningEnabled}
+                      customVoices={customVoices}
+                      selectedCustomVoice={selectedCustomVoice}
+                      onCustomVoiceChange={setSelectedCustomVoice}
+                      onAddCustomVoice={handleAddCustomVoice}
+                      onEditCustomVoice={handleEditCustomVoice}
                       settingsContent={
                         <PlaybackSettingsContent
                           speed={speed}
@@ -1052,6 +1144,8 @@ function App() {
                           onTimeStretchChange={setTimeStretch}
                           sentencePause={sentencePause}
                           onSentencePauseChange={setSentencePause}
+                          ruaccentEnabled={ruaccentEnabled}
+                          onRuaccentChange={setRuaccentEnabled}
                           previewText={previewText}
                           onPreviewTextChange={setPreviewText}
                           selectedProvider={selectedProvider}
@@ -1075,13 +1169,39 @@ function App() {
                     </div>
                   </div>
                 )}
+
+                {/* Action Buttons */}
+                {isProviderReady && !isConverting && (
+                  <div className="flex gap-2 pt-2">
+                    <Button
+                      variant="outline"
+                      onClick={handleConvert}
+                      disabled={!isModelLoadedForLanguage || !isSelectedVoiceValid}
+                      className="flex-1 h-12 text-base gap-2 border-primary/50 text-primary hover:bg-primary/10 hover:text-primary"
+                      title={!isModelLoadedForLanguage ? t.voice.loadModelFirst : ''}
+                    >
+                      <Play className="h-5 w-5" />
+                      {!isModelLoadedForLanguage ? t.conversion.loadModelToConvert : t.conversion.convertToMp3}
+                    </Button>
+                    {status === t.conversion.completed && lastOutputPath && (
+                      <Button
+                        variant="outline"
+                        className="h-12 gap-2 border-primary/50 text-primary hover:bg-primary/10 hover:text-primary"
+                        onClick={() => window.electronAPI.openExternal(`file:///${lastOutputPath.replace(/\\/g, '/').replace(/\/[^/]+$/, '')}`)}
+                      >
+                        <FolderOpen className="h-5 w-5" />
+                        {t.conversion.openFolder}
+                      </Button>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
           )}
 
           {/* Conversion Progress */}
           {isConverting && (
-            <ConversionProgress progress={progress} status={status} />
+            <ConversionProgress progress={progress} status={status} onCancel={handleCancel} />
           )}
 
           {/* Error Display */}
@@ -1089,44 +1209,6 @@ function App() {
             <Card className="border-destructive">
               <CardContent className="py-3">
                 <p className="text-destructive text-center text-sm">{error}</p>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Action Buttons */}
-          {file && bookContent && isProviderReady && (
-            <div className="w-full">
-              {!isConverting ? (
-                <Button
-                  onClick={handleConvert}
-                  disabled={!isModelLoadedForLanguage || !isSelectedVoiceValid}
-                  className="w-full h-12 text-base gap-2"
-                  title={!isModelLoadedForLanguage ? t.voice.loadModelFirst : ''}
-                >
-                  <Play className="h-5 w-5" />
-                  {!isModelLoadedForLanguage ? t.conversion.loadModelToConvert : t.conversion.convertToMp3}
-                </Button>
-              ) : (
-                <Button
-                  variant="destructive"
-                  onClick={handleCancel}
-                  className="w-full h-12 text-base gap-2"
-                >
-                  <X className="h-5 w-5" />
-                  {t.common.cancel}
-                </Button>
-              )}
-            </div>
-          )}
-
-          {/* Success Message */}
-          {!isConverting && status === t.conversion.completed && (
-            <Card className="border-primary">
-              <CardContent className="py-3">
-                <div className="flex items-center justify-center gap-2 text-primary text-sm">
-                  <Download className="h-4 w-4" />
-                  <span className="font-medium">{t.conversion.audioSaved}</span>
-                </div>
               </CardContent>
             </Card>
           )}
@@ -1157,6 +1239,18 @@ function App() {
             }}
           />
         )}
+
+        {/* Custom Voice Modal */}
+        <CustomVoiceModal
+          isOpen={showCustomVoiceModal}
+          onClose={() => {
+            setShowCustomVoiceModal(false)
+            setEditingCustomVoice(null)
+          }}
+          onVoiceSaved={handleCustomVoiceSaved}
+          onVoiceDeleted={handleCustomVoiceDeleted}
+          editingVoice={editingCustomVoice}
+        />
 
         {/* Update Modal */}
         {showUpdateModal && updateInfo && (

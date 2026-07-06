@@ -57,7 +57,7 @@ export function FileDropZone({
 
   return (
     <Card>
-      <CardContent className="py-6">
+      <CardContent className="p-6">
         {!file ? (
           <div
             className={`border-2 border-dashed rounded-lg p-12 text-center transition-colors cursor-pointer

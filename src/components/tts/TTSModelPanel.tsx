@@ -132,29 +132,22 @@ export function TTSModelPanel({
             />
           </div>
 
-          <div className="mt-3 text-xs text-muted-foreground">
-            {serverStatus?.silero.ru_loaded && serverStatus?.silero.en_loaded
-              ? t.ttsPanel.bothModelsLoaded
-              : serverStatus?.silero.ru_loaded
-                ? t.ttsPanel.russianModelLoaded
-                : serverStatus?.silero.en_loaded
-                  ? t.ttsPanel.englishModelLoaded
-                  : t.ttsPanel.clickToLoadModel}
+          <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+            <span>
+              {serverStatus?.silero.ru_loaded && serverStatus?.silero.en_loaded
+                ? t.ttsPanel.bothModelsLoaded
+                : serverStatus?.silero.ru_loaded
+                  ? t.ttsPanel.russianModelLoaded
+                  : serverStatus?.silero.en_loaded
+                    ? t.ttsPanel.englishModelLoaded
+                    : t.ttsPanel.loadModelForLanguage}
+            </span>
+            {serverStatus?.running && (
+              <span className="font-mono">RAM: {serverStatus.memory_gb.toFixed(2)} GB</span>
+            )}
           </div>
         </div>
 
-        {serverStatus?.running && (
-          <div className="flex items-center justify-between text-xs text-muted-foreground pt-2 border-t">
-            <span className="font-mono">RAM: {serverStatus.memory_gb.toFixed(2)} GB</span>
-          </div>
-        )}
-
-        {(!serverStatus?.running ||
-          (!serverStatus?.silero.ru_loaded && !serverStatus?.silero.en_loaded)) && (
-          <p className="text-xs text-muted-foreground text-center py-1">
-            {t.ttsPanel.loadModelForLanguage}
-          </p>
-        )}
       </div>
     )
   }
@@ -253,24 +246,18 @@ export function TTSModelPanel({
           />
         </div>
 
-        <div className="mt-3 text-xs text-muted-foreground">
-          {serverStatus?.coqui.loaded
-            ? t.ttsPanel.modelLoadedReady
-            : t.ttsPanel.clickToLoad}
+        <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+          <span>
+            {serverStatus?.coqui.loaded
+              ? t.ttsPanel.modelLoadedReady
+              : t.ttsPanel.loadModelToEnable}
+          </span>
+          {serverStatus?.running && (
+            <span className="font-mono">RAM: {serverStatus.memory_gb.toFixed(2)} GB</span>
+          )}
         </div>
       </div>
 
-      {serverStatus?.running && (
-        <div className="flex items-center justify-between text-xs text-muted-foreground pt-2 border-t">
-          <span className="font-mono">RAM: {serverStatus.memory_gb.toFixed(2)} GB</span>
-        </div>
-      )}
-
-      {(!serverStatus?.running || !serverStatus?.coqui.loaded) && (
-        <p className="text-xs text-muted-foreground text-center py-1">
-          {t.ttsPanel.loadModelToEnable}
-        </p>
-      )}
     </div>
   )
 }

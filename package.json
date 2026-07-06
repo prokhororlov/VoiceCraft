@@ -1,6 +1,6 @@
 {
   "name": "voicecraft",
-  "version": "1.1.11",
+  "version": "1.1.13",
   "description": "Convert books (FB2, EPUB, TXT) to MP3 using text-to-speech",
   "main": "dist-electron/main.js",
   "scripts": {

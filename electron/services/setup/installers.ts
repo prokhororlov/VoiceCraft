@@ -745,6 +745,124 @@ print("SILERO_MODEL_OK")
       try { unlinkSync(preloadScriptPath) } catch {}
     }
 
+    // Install ruaccent for Russian stress marks
+    onProgress({
+      stage: 'silero',
+      progress: scaleProgress(92),
+      details: 'Installing ruaccent (Russian stress marks)...'
+    })
+
+    const ruaccentResult = await runPipWithProgress(
+      targetPython,
+      'ruaccent',
+      {
+        timeout: 300000,
+        onProgress: (info) => {
+          const progress = scaleProgress(92 + Math.round((info.percentage || 0) * 0.03))
+          let details = 'Installing ruaccent...'
+          if (info.phase === 'downloading' && info.downloaded !== undefined && info.total !== undefined) {
+            details = `Downloading ruaccent: ${info.downloaded.toFixed(0)}/${info.total.toFixed(0)} MB`
+          } else if (info.phase === 'downloading' && info.percentage !== undefined) {
+            details = `Downloading ruaccent: ${info.percentage}%`
+          }
+          onProgress({ stage: 'silero', progress, details })
+        }
+      }
+    )
+
+    if (!ruaccentResult.success) {
+      // Don't fail installation, ruaccent is optional
+      console.warn('[installSilero] ruaccent installation failed:', ruaccentResult.error)
+    }
+
+    // Pre-download ruaccent model (~300MB)
+    onProgress({
+      stage: 'silero',
+      progress: scaleProgress(95),
+      details: 'Downloading ruaccent model (~300 MB)...'
+    })
+
+    const ruaccentPreloadScript = `import sys
+try:
+    from ruaccent import RUAccent
+    print("RUACCENT_LOADING", flush=True)
+    model = RUAccent()
+    model.load(omograph_model_size='turbo', use_dictionary=True)
+    print("RUACCENT_OK", flush=True)
+except ImportError:
+    print("RUACCENT_NOT_INSTALLED", flush=True)
+except Exception as e:
+    print(f"RUACCENT_ERROR: {e}", flush=True)
+`
+    const ruaccentPreloadPath = path.join(sileroPath, 'preload_ruaccent.py')
+    fs.writeFileSync(ruaccentPreloadPath, ruaccentPreloadScript, 'utf-8')
+
+    try {
+      await new Promise<void>((resolve) => {
+        const proc = spawn(targetPython, [ruaccentPreloadPath], {
+          shell: true,
+          env: { ...process.env, PYTHONIOENCODING: 'utf-8' }
+        })
+
+        proc.stdout?.on('data', (data: Buffer) => {
+          const str = data.toString()
+          if (str.includes('RUACCENT_LOADING')) {
+            onProgress({
+              stage: 'silero',
+              progress: scaleProgress(96),
+              details: 'Loading ruaccent model...'
+            })
+          } else if (str.includes('RUACCENT_OK')) {
+            onProgress({
+              stage: 'silero',
+              progress: scaleProgress(99),
+              details: 'ruaccent model loaded!'
+            })
+          }
+        })
+
+        proc.stderr?.on('data', (data: Buffer) => {
+          const str = data.toString()
+          // huggingface_hub outputs download progress in tqdm format
+          const sizeMatch = str.match(/(\d+(?:\.\d+)?)\s*(M|G|MB|GB|k|K|KB)\s*\/\s*(\d+(?:\.\d+)?)\s*(M|G|MB|GB|k|K|KB)/i)
+
+          if (sizeMatch) {
+            const downloaded = parseFloat(sizeMatch[1])
+            const downloadedUnit = sizeMatch[2].toUpperCase().replace('B', '')
+            const total = parseFloat(sizeMatch[3])
+            const totalUnit = sizeMatch[4].toUpperCase().replace('B', '')
+
+            // Convert to MB for display
+            const downloadedMB = downloadedUnit === 'G' ? downloaded * 1024 : (downloadedUnit === 'K' ? downloaded / 1024 : downloaded)
+            const totalMB = totalUnit === 'G' ? total * 1024 : (totalUnit === 'K' ? total / 1024 : total)
+
+            onProgress({
+              stage: 'silero',
+              progress: scaleProgress(95 + Math.round((downloadedMB / totalMB) * 3)),
+              details: `Downloading ruaccent model: ${Math.round(downloadedMB)}/${Math.round(totalMB)} MB`
+            })
+          }
+        })
+
+        const timeout = setTimeout(() => {
+          proc.kill()
+          resolve()
+        }, 300000) // 5 min timeout
+
+        proc.on('close', () => {
+          clearTimeout(timeout)
+          resolve()
+        })
+
+        proc.on('error', () => {
+          clearTimeout(timeout)
+          resolve()
+        })
+      })
+    } finally {
+      try { unlinkSync(ruaccentPreloadPath) } catch {}
+    }
+
     // Save accelerator config
     saveAcceleratorConfig('silero', accelerator)
 
@@ -1119,7 +1237,7 @@ export async function installCoqui(
 
     onProgress({
       stage: 'coqui',
-      progress: scaleProgress(82),
+      progress: scaleProgress(81),
       details: 'Setting up generation script...'
     })
 

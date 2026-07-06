@@ -25,6 +25,7 @@ export const en: Translations = {
     pleaseWait: 'Please wait...',
     startWork: 'Start',
     downloadAndInstall: 'Download and Install',
+    apply: 'Apply',
   },
 
   // Title bar
@@ -228,6 +229,7 @@ export const en: Translations = {
     convertToMp3: 'Convert to MP3',
     cancelled: 'Conversion cancelled',
     audioSaved: 'Audio file saved successfully!',
+    openFolder: 'Open folder',
   },
 
   // Voice selector
@@ -272,6 +274,8 @@ export const en: Translations = {
     numbersToWords: 'Numbers converted to words',
     sentencePause: 'Sentence Pause',
     previewTextLabel: 'Preview Text',
+    ruaccent: 'Stress Marks (Russian)',
+    ruaccentDescription: 'Automatically add stress marks to improve pronunciation',
   },
 
   // Updates
@@ -345,5 +349,32 @@ export const en: Translations = {
   installation: {
     inProgress: 'Installation in progress',
     doNotClose: 'Please do not close the application until the installation is complete.',
+  },
+
+  // Voice cloning
+  voiceCloning: {
+    toggle: 'Voice Cloning',
+    addVoice: 'Add Voice',
+    editVoice: 'Edit Voice',
+    voiceName: 'Voice Name',
+    voiceNamePlaceholder: 'Enter voice name',
+    selectFile: 'Select Audio File',
+    dropFile: 'Drop audio file here or click to browse',
+    requirements: 'Audio Requirements',
+    formats: 'Formats: MP3, WAV, OGG, FLAC, M4A, AAC, WMA, AIFF, AMR',
+    maxSize: 'Max size: 10 MB',
+    duration: 'Duration: 10-60 seconds',
+    validating: 'Validating...',
+    valid: 'File is valid',
+    invalidDuration: 'Duration must be 10-60 seconds',
+    invalidFormat: 'Unsupported format',
+    fileTooLarge: 'File must be under 10 MB',
+    replaceAudio: 'Replace Audio',
+    deleteVoice: 'Delete Voice',
+    deleteConfirm: 'Delete this voice?',
+    noVoices: 'No custom voices yet',
+    errorAdding: 'Failed to add voice',
+    errorUpdating: 'Failed to update voice',
+    errorDeleting: 'Failed to delete voice',
   },
 };

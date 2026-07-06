@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron'
+import { ipcMain, dialog } from 'electron'
 import path from 'path'
 import {
   convertToSpeech,
@@ -14,6 +14,14 @@ import {
   setPreferredDevice,
   cleanupTempAudio
 } from '../../services/tts'
+import {
+  loadCustomVoices,
+  addCustomVoice,
+  updateCustomVoice,
+  deleteCustomVoice,
+  validateAudioFile
+} from '../../services/tts/customVoices'
+import { getMainWindow } from '../window'
 
 let conversionAborted = false
 let lastConversionOutputPath: string | null = null
@@ -37,7 +45,7 @@ export function registerTTSHandlers() {
     text: string,
     voice: string,
     outputPath: string,
-    options: { rate?: string; volume?: string }
+    options: { rate?: string; volume?: string; sentencePause?: number; pitch?: number; timeStretch?: number; customVoiceId?: string; useRuaccent?: boolean }
   ) => {
     conversionAborted = false
 
@@ -81,7 +89,7 @@ export function registerTTSHandlers() {
   })
 
   ipcMain.handle('preview-voice', async (_event, text: string, voiceShortName: string, options: Record<string, unknown> = {}) => {
-    return await previewVoice(text, voiceShortName, options as { rate?: string; sentencePause?: number })
+    return await previewVoice(text, voiceShortName, options as { rate?: string; sentencePause?: number; pitch?: number; timeStretch?: number; customVoiceId?: string; useRuaccent?: boolean })
   })
 
   ipcMain.handle('abort-preview', () => {
@@ -122,5 +130,42 @@ export function registerTTSHandlers() {
 
   ipcMain.handle('tts-set-device', async (_event, device: string) => {
     return setPreferredDevice(device)
+  })
+
+  // Custom Voices handlers
+  ipcMain.handle('get-custom-voices', async () => {
+    return loadCustomVoices()
+  })
+
+  ipcMain.handle('add-custom-voice', async (_event, filePath: string, name: string) => {
+    return addCustomVoice(filePath, name)
+  })
+
+  ipcMain.handle('update-custom-voice', async (_event, id: string, updates: { name?: string; newFilePath?: string }) => {
+    return updateCustomVoice(id, updates)
+  })
+
+  ipcMain.handle('delete-custom-voice', async (_event, id: string) => {
+    return deleteCustomVoice(id)
+  })
+
+  ipcMain.handle('validate-audio-file', async (_event, filePath: string) => {
+    return validateAudioFile(filePath)
+  })
+
+  ipcMain.handle('open-audio-file-dialog', async () => {
+    const mainWindow = getMainWindow()
+    if (!mainWindow) {
+      return null
+    }
+
+    const result = await dialog.showOpenDialog(mainWindow, {
+      filters: [
+        { name: 'Audio Files', extensions: ['mp3', 'wav', 'wma', 'ogg', 'flac', 'amr', 'm4a', 'aiff', 'aac'] }
+      ],
+      properties: ['openFile']
+    })
+
+    return result.filePaths[0] || null
   })
 }

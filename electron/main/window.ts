@@ -42,8 +42,8 @@ export function createWindow() {
     mainWindow.loadURL('http://localhost:5173')
     mainWindow.webContents.openDevTools()
   } else {
-    // In prod: __dirname is dist-electron/main, dist folder is at ../../dist
-    mainWindow.loadFile(path.join(__dirname, '../../../dist/index.html'))
+    // In prod: __dirname is app.asar/dist-electron/main, dist folder is at app.asar/dist
+    mainWindow.loadFile(path.join(__dirname, '../../dist/index.html'))
   }
 
   // Allow opening DevTools with F12 in production for debugging

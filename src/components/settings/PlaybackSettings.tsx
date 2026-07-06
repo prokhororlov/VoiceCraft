@@ -3,6 +3,7 @@ import { Pencil, Check, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Slider } from '@/components/ui/slider'
+import { Switch } from '@/components/ui/switch'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { useI18n } from '@/i18n'
 
@@ -17,6 +18,8 @@ interface PlaybackSettingsProps {
   onTimeStretchChange: (value: number[]) => void
   sentencePause: number[]
   onSentencePauseChange: (value: number[]) => void
+  ruaccentEnabled: boolean
+  onRuaccentChange: (enabled: boolean) => void
   previewText: string
   onPreviewTextChange: (text: string) => void
   selectedProvider: string
@@ -36,6 +39,8 @@ export function PlaybackSettings({
   onTimeStretchChange,
   sentencePause,
   onSentencePauseChange,
+  ruaccentEnabled,
+  onRuaccentChange,
   previewText,
   onPreviewTextChange,
   selectedProvider,
@@ -56,6 +61,8 @@ export function PlaybackSettings({
           onTimeStretchChange={onTimeStretchChange}
           sentencePause={sentencePause}
           onSentencePauseChange={onSentencePauseChange}
+          ruaccentEnabled={ruaccentEnabled}
+          onRuaccentChange={onRuaccentChange}
           previewText={previewText}
           onPreviewTextChange={onPreviewTextChange}
           selectedProvider={selectedProvider}
@@ -76,6 +83,8 @@ interface PlaybackSettingsContentProps {
   onTimeStretchChange: (value: number[]) => void
   sentencePause: number[]
   onSentencePauseChange: (value: number[]) => void
+  ruaccentEnabled: boolean
+  onRuaccentChange: (enabled: boolean) => void
   previewText: string
   onPreviewTextChange: (text: string) => void
   selectedProvider: string
@@ -92,6 +101,8 @@ export function PlaybackSettingsContent({
   onTimeStretchChange,
   sentencePause,
   onSentencePauseChange,
+  ruaccentEnabled,
+  onRuaccentChange,
   previewText,
   onPreviewTextChange,
   selectedProvider,
@@ -188,18 +199,6 @@ export function PlaybackSettingsContent({
         </div>
       )}
 
-      {/* Silero auto-settings note */}
-      {selectedProvider === 'silero' && (
-        <div className="text-[10px] text-muted-foreground bg-muted/30 rounded-md p-2 space-y-1">
-          <p className="font-medium">{t.playback.autoEnabled}</p>
-          <ul className="list-disc list-inside space-y-0.5">
-            <li>{t.playback.autoYo}</li>
-            <li>{t.playback.autoStress}</li>
-            <li>{t.playback.numbersToWords}</li>
-          </ul>
-        </div>
-      )}
-
       {/* Sentence Pause (Piper only) */}
       {selectedProvider === 'piper' && (
         <div className="space-y-2">
@@ -224,6 +223,23 @@ export function PlaybackSettingsContent({
             <span>1.5s</span>
             <span>2.0s</span>
           </div>
+        </div>
+      )}
+
+      {/* Russian Stress Marks (Silero only) */}
+      {selectedProvider === 'silero' && (
+        <div className="flex items-center justify-between py-2">
+          <div className="space-y-0.5">
+            <Label className="text-sm">{t.playback.ruaccent}</Label>
+            <p className="text-[10px] text-muted-foreground">
+              {t.playback.ruaccentDescription}
+            </p>
+          </div>
+          <Switch
+            checked={ruaccentEnabled}
+            onCheckedChange={onRuaccentChange}
+            disabled={isConverting || isPreviewing}
+          />
         </div>
       )}
 

@@ -82,8 +82,8 @@ export function SettingsDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="en">English</SelectItem>
-                <SelectItem value="ru">Русский</SelectItem>
+                <SelectItem value="en">{t.uiLanguages.english}</SelectItem>
+                <SelectItem value="ru">{t.uiLanguages.russian}</SelectItem>
               </SelectContent>
             </Select>
           </div>

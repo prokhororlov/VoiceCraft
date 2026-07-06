@@ -617,6 +617,16 @@ def select_device():
 
     return "cuda" if torch.cuda.is_available() else "cpu"
 
+def prepare_text_for_xtts(text):
+    text = " ".join(str(text).split())
+    for mark in [",", ";", ":"]:
+        if text.endswith(mark):
+            text = text[:-1] + "."
+            break
+    if text and text[-1] not in ".!?…":
+        text += "."
+    return text
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--text', required=True)
@@ -640,7 +650,7 @@ def main():
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
 
     tts.tts_to_file(
-        text=args.text,
+        text=prepare_text_for_xtts(args.text),
         speaker=args.speaker,
         language=lang,
         file_path=args.output
@@ -685,6 +695,37 @@ torch.inference_mode = torch.no_grad
 app = Flask(__name__)
 models = {"silero": {"ru": None, "en": None}, "coqui": None}
 coqui_lock = threading.Lock()
+ruaccent_model = None
+
+def load_ruaccent():
+    """Lazy load ruaccent model for Russian stress placement."""
+    global ruaccent_model
+    if ruaccent_model is None:
+        try:
+            from ruaccent import RUAccent
+            ruaccent_model = RUAccent()
+            ruaccent_model.load(omograph_model_size='turbo', use_dictionary=True)
+            print("ruaccent model loaded successfully", file=sys.stderr)
+        except ImportError:
+            print("ruaccent not installed, stress placement disabled", file=sys.stderr)
+            return None
+        except Exception as e:
+            print(f"Failed to load ruaccent: {e}", file=sys.stderr)
+            return None
+    return ruaccent_model
+
+def apply_stress_marks(text, lang):
+    """Apply Russian stress marks to text if ruaccent is available and lang is Russian."""
+    if lang not in ['ru', 'ru-ru', 'ru_ru']:
+        return text
+    model = load_ruaccent()
+    if model is None:
+        return text
+    try:
+        return model.process_all(text)
+    except Exception as e:
+        print(f"ruaccent processing failed: {e}", file=sys.stderr)
+        return text
 
 def detect_device():
     """Detect best available compute device. Priority: CUDA > DirectML > CPU"""
@@ -773,7 +814,7 @@ def load_silero_model(lang):
     silero_device = torch.device("cpu") if backend == "directml" else torch.device(device)
     model.to(silero_device)
     models["silero"][lang] = model
-    print(f"Silero {lang} loaded on {silero_device}. Memory: {get_memory_gb():.2f} GB", file=sys.stderr)
+    print(f"Silero {lang} loaded on {device}. Memory: {get_memory_gb():.2f} GB", file=sys.stderr)
 
 def generate_silero(text, speaker, lang, rate=1.0, sr=48000):
     if models["silero"].get(lang) is None:
@@ -797,7 +838,18 @@ def load_coqui_model():
     models["coqui"] = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(device)
     print(f"Coqui loaded on {device_label}. Memory: {get_memory_gb():.2f} GB", file=sys.stderr)
 
+def prepare_text_for_xtts(text):
+    text = " ".join(str(text).split())
+    for mark in [",", ";", ":"]:
+        if text.endswith(mark):
+            text = text[:-1] + "."
+            break
+    if text and text[-1] not in ".!?…":
+        text += "."
+    return text
+
 def generate_coqui(text, speaker, lang):
+    text = prepare_text_for_xtts(text)
     l = lang.lower()
     if l in ['ru-ru', 'ru_ru']:
         l = 'ru'
@@ -872,10 +924,13 @@ def generate():
     data = request.json or {}
     engine, text, speaker = data.get("engine"), data.get("text"), data.get("speaker")
     lang, rate = data.get("language", "ru"), data.get("rate", 1.0)
+    use_ruaccent = data.get("use_ruaccent", False)
     if not all([engine, text, speaker]):
         return jsonify({"error": "Missing params"}), 400
     try:
-        audio = generate_silero(text, speaker, lang, rate) if engine == "silero" else generate_coqui(text, speaker, lang)
+        # Apply ruaccent stress marks only for Silero (not for Coqui)
+        processed_text = apply_stress_marks(text, lang) if (engine == "silero" and use_ruaccent) else text
+        audio = generate_silero(processed_text, speaker, lang, rate) if engine == "silero" else generate_coqui(text, speaker, lang)
         return Response(audio, mimetype="audio/wav")
     except Exception as e:
         import traceback

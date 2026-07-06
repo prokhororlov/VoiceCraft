@@ -68,6 +68,7 @@ export function SileroSetup({
                 {selectedAccelerator === 'cuda' ? '2.3 GB' : '150 MB'}
               </li>
               <li>{t.providers.silero.dependencies}</li>
+              <li>ruaccent ({t.playback.ruaccent}) — ~300 MB</li>
             </ul>
           </div>
 
@@ -162,7 +163,7 @@ export function SileroSetup({
 
           <div className="flex items-center justify-between">
             <span className="text-xs text-muted-foreground">
-              {t.providers.silero.initialDownload}: ~{selectedAccelerator === 'cuda' ? '2.5 GB' : '155 MB'}
+              {t.providers.silero.initialDownload}: ~{selectedAccelerator === 'cuda' ? '2.8 GB' : '455 MB'}
             </span>
             <Button
               variant="default"

@@ -124,6 +124,16 @@ export interface DownloadProgress {
   total: number
 }
 
+export interface CustomVoiceMetadata {
+  id: string
+  name: string
+  fileName: string
+  originalFileName: string
+  duration: number
+  createdAt: string
+  updatedAt: string
+}
+
 // ============================================================================
 // API
 // ============================================================================
@@ -210,6 +220,25 @@ const electronAPI = {
 
   ttsSetDevice: (device: string): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke('tts-set-device', device),
+
+  // Custom Voices API
+  getCustomVoices: (): Promise<CustomVoiceMetadata[]> =>
+    ipcRenderer.invoke('get-custom-voices'),
+
+  addCustomVoice: (filePath: string, name: string): Promise<{ success: boolean; voice?: CustomVoiceMetadata; error?: string }> =>
+    ipcRenderer.invoke('add-custom-voice', filePath, name),
+
+  updateCustomVoice: (id: string, updates: { name?: string; newFilePath?: string }): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('update-custom-voice', id, updates),
+
+  deleteCustomVoice: (id: string): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('delete-custom-voice', id),
+
+  validateAudioFile: (filePath: string): Promise<{ valid: boolean; duration?: number; error?: string }> =>
+    ipcRenderer.invoke('validate-audio-file', filePath),
+
+  openAudioFileDialog: (): Promise<string | null> =>
+    ipcRenderer.invoke('open-audio-file-dialog'),
 
   // Setup API
   checkDependencies: (): Promise<DependencyStatus> =>
