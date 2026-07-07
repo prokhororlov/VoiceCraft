@@ -13,7 +13,7 @@ Convert e-books (FB2, EPUB, TXT) to MP3 audiobooks using various Text-to-Speech 
 - **Multiple themes** - Light/dark/system theme support
 - **Multi-language UI** - English and Russian interface
 - **Auto-splitting** - large books split into parts
-- **GPU acceleration** - CUDA support for faster generation
+- **GPU acceleration** - NVIDIA CUDA and AMD DirectML support for faster generation
 
 ## TTS Providers
 
@@ -243,12 +243,14 @@ Silero and Coqui support hardware acceleration for faster speech generation:
 | Accelerator | Supported GPUs | PyTorch Size | Speed Boost |
 |-------------|----------------|--------------|-------------|
 | **CUDA**    | NVIDIA (GTX 10xx+, RTX series) | ~2.3 GB | 3-10x |
-| **Intel XPU** | Intel Arc, Iris Xe, UHD 7xx+ | ~500 MB | 2-5x |
-| **CPU**     | Any | ~200 MB | Baseline |
+| **DirectML** | AMD Radeon on Windows | ~250 MB | 2-5x |
+| **CPU**     | Any | ~150-200 MB | Baseline |
+
+CUDA is available for Silero and Coqui. DirectML is available for Coqui XTTS-v2.
 
 #### Enabling GPU Acceleration
 
-1. **During initial setup**: When installing Silero or Coqui, select your preferred accelerator (CUDA, Intel XPU, or CPU)
+1. **During initial setup**: When installing Silero or Coqui, select your preferred accelerator (CUDA, DirectML, or CPU). DirectML appears for Coqui when an AMD Radeon GPU is detected.
 
 2. **Change accelerator later**: Go to Settings → TTS Setup → click "Reinstall" button next to Silero or Coqui to change the accelerator
 
@@ -259,15 +261,16 @@ Silero and Coqui support hardware acceleration for faster speech generation:
 - Latest NVIDIA drivers installed
 - Automatically detected via `nvidia-smi`
 
-**For Intel XPU:**
-- Intel Arc, Iris Xe, or UHD Graphics 7xx+
-- Latest Intel GPU drivers
-- Intel Extension for PyTorch (installed automatically)
+**For AMD DirectML:**
+- AMD Radeon GPU on Windows
+- Latest AMD Adrenalin drivers installed
+- DirectML dependencies are installed automatically
+- Coqui voice cloning runs on CPU for cloned-voice requests when DirectML is selected, because XTTS voice cloning uses operations that DirectML does not support
 
 #### Auto-Detection
 
 The application automatically detects available GPUs:
-- Priority order: CUDA → Intel XPU → CPU
+- Priority order: CUDA → DirectML → CPU
 - GPU name and VRAM are displayed in the setup dialog
 - If no compatible GPU is found, CPU mode is used
 
