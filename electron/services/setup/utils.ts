@@ -630,7 +630,8 @@ def prepare_text_for_xtts(text):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--text', required=True)
-    parser.add_argument('--speaker', required=True, help='Built-in speaker name (e.g., "Claribel Dervla")')
+    parser.add_argument('--speaker', help='Built-in speaker name (e.g., "Claribel Dervla")')
+    parser.add_argument('--speaker_wav', help='Reference audio for voice cloning')
     parser.add_argument('--language', required=True)
     parser.add_argument('--output', required=True)
     args = parser.parse_args()
@@ -644,17 +645,24 @@ def main():
     elif lang in ['en-us', 'en-gb', 'en_us', 'en_gb', 'en']:
         lang = 'en'
 
-    device = select_device()
+    device = "cpu" if args.speaker_wav else select_device()
     tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(device)
 
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
 
-    tts.tts_to_file(
-        text=prepare_text_for_xtts(args.text),
-        speaker=args.speaker,
-        language=lang,
-        file_path=args.output
-    )
+    kwargs = {
+        "text": prepare_text_for_xtts(args.text),
+        "language": lang,
+        "file_path": args.output
+    }
+    if args.speaker_wav:
+        kwargs["speaker_wav"] = args.speaker_wav
+    elif args.speaker:
+        kwargs["speaker"] = args.speaker
+    else:
+        raise ValueError("Either --speaker or --speaker_wav is required")
+
+    tts.tts_to_file(**kwargs)
 
     print(f"Audio saved to {args.output}")
 
@@ -848,7 +856,7 @@ def prepare_text_for_xtts(text):
         text += "."
     return text
 
-def generate_coqui(text, speaker, lang):
+def generate_coqui(text, speaker, lang, speaker_wav=None):
     text = prepare_text_for_xtts(text)
     l = lang.lower()
     if l in ['ru-ru', 'ru_ru']:
@@ -862,7 +870,25 @@ def generate_coqui(text, speaker, lang):
         with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as f:
             tmp = f.name
         try:
-            models["coqui"].tts_to_file(text=text, speaker=speaker, language=l, file_path=tmp)
+            kwargs = {"text": text, "language": l, "file_path": tmp}
+            if speaker_wav:
+                kwargs["speaker_wav"] = speaker_wav
+            elif speaker:
+                kwargs["speaker"] = speaker
+            else:
+                raise ValueError("Missing speaker or speaker_wav")
+
+            use_cpu_for_clone = bool(speaker_wav) and backend == "directml"
+            if use_cpu_for_clone:
+                print("DirectML does not support ComplexFloat used by XTTS voice cloning; using CPU for this cloned-voice request.", file=sys.stderr)
+                models["coqui"].to("cpu")
+
+            try:
+                models["coqui"].tts_to_file(**kwargs)
+            finally:
+                if use_cpu_for_clone:
+                    models["coqui"].to(device)
+
             with open(tmp, 'rb') as f:
                 return f.read()
         finally:
@@ -922,15 +948,20 @@ def unload_model():
 @app.route("/generate", methods=["POST"])
 def generate():
     data = request.json or {}
-    engine, text, speaker = data.get("engine"), data.get("text"), data.get("speaker")
+    engine, text = data.get("engine"), data.get("text")
+    speaker, speaker_wav = data.get("speaker"), data.get("speaker_wav")
     lang, rate = data.get("language", "ru"), data.get("rate", 1.0)
     use_ruaccent = data.get("use_ruaccent", False)
-    if not all([engine, text, speaker]):
+    if not engine or not text:
+        return jsonify({"error": "Missing params"}), 400
+    if engine == "silero" and not speaker:
+        return jsonify({"error": "Missing speaker"}), 400
+    if engine == "coqui" and not (speaker or speaker_wav):
         return jsonify({"error": "Missing params"}), 400
     try:
         # Apply ruaccent stress marks only for Silero (not for Coqui)
         processed_text = apply_stress_marks(text, lang) if (engine == "silero" and use_ruaccent) else text
-        audio = generate_silero(processed_text, speaker, lang, rate) if engine == "silero" else generate_coqui(text, speaker, lang)
+        audio = generate_silero(processed_text, speaker, lang, rate) if engine == "silero" else generate_coqui(text, speaker, lang, speaker_wav)
         return Response(audio, mimetype="audio/wav")
     except Exception as e:
         import traceback

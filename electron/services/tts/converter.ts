@@ -415,6 +415,31 @@ function cleanTextForTTS(text: string): string {
     .trim()
 }
 
+function prepareTextForCoqui(text: string): string {
+  let result = cleanTextForTTS(text)
+    .replace(/\s+/g, ' ')
+    .replace(/\s+([,.!?;:])/g, '$1')
+    .replace(/([,.!?;:])(?=\S)/g, '$1 ')
+    .trim()
+
+  // XTTS can hallucinate short pseudo-words when a request ends on a weak
+  // boundary. Force each chunk to finish on a strong sentence stop.
+  result = result.replace(/[,;:]+$/g, '.')
+  if (result && !/[.!?…]$/.test(result)) {
+    result += '.'
+  }
+
+  return result
+}
+
+function normalizeTTSLanguage(language?: string): string {
+  if (!language) return 'en'
+  const normalized = language.toLowerCase()
+  if (normalized === 'ru-ru' || normalized === 'ru_ru') return 'ru-RU'
+  if (normalized === 'en-us' || normalized === 'en_us' || normalized === 'en-gb' || normalized === 'en_gb') return 'en'
+  return language
+}
+
 // Split text into chunks
 function splitIntoChunks(text: string, maxLength: number = 1000, language: string = 'en'): string[] {
   let cleanedText = cleanTextForTTS(text)
@@ -692,10 +717,12 @@ async function generateSpeechWithCoqui(
   speakerWav?: string,
   useRuaccent?: boolean
 ): Promise<void> {
+  const coquiText = prepareTextForCoqui(text)
+
   // Try to use TTS server first
   const serverStatus = await getTTSServerStatus()
   if (serverStatus.running) {
-    await generateViaServer('coqui', text, speakerName, language, outputPath, undefined, undefined, undefined, speakerWav, useRuaccent)
+    await generateViaServer('coqui', coquiText, speakerName, language, outputPath, undefined, undefined, undefined, speakerWav, useRuaccent)
     return
   }
 
@@ -714,7 +741,7 @@ async function generateSpeechWithCoqui(
   return new Promise<void>((resolve, reject) => {
     const args = [
       coquiScript,
-      '--text', text,
+      '--text', coquiText,
       '--language', language,
       '--output', outputPath
     ]
@@ -943,10 +970,12 @@ async function generateSpeechWithCoquiForPreview(
   speakerWav?: string,
   useRuaccent?: boolean
 ): Promise<void> {
+  const coquiText = prepareTextForCoqui(text)
+
   // Try to use TTS server first (abortable via HTTP)
   const serverStatus = await getTTSServerStatus()
   if (serverStatus.running) {
-    await generateViaServerForPreview('coqui', text, speakerName, language, outputPath, undefined, undefined, undefined, speakerWav, useRuaccent)
+    await generateViaServerForPreview('coqui', coquiText, speakerName, language, outputPath, undefined, undefined, undefined, speakerWav, useRuaccent)
     return
   }
 
@@ -965,7 +994,7 @@ async function generateSpeechWithCoquiForPreview(
   return new Promise<void>((resolve, reject) => {
     const args = [
       coquiScript,
-      '--text', text,
+      '--text', coquiText,
       '--language', language,
       '--output', outputPath
     ]
@@ -1403,7 +1432,7 @@ export async function convertToSpeech(
   text: string,
   voiceShortName: string,
   outputPath: string,
-  options: { rate?: string; volume?: string; sentencePause?: number; pitch?: number; timeStretch?: number; customVoiceId?: string; useRuaccent?: boolean } = {},
+  options: { rate?: string; volume?: string; sentencePause?: number; pitch?: number; timeStretch?: number; customVoiceId?: string; useRuaccent?: boolean; language?: string } = {},
   onProgress?: (progress: number, status: string) => void,
   isAborted?: () => boolean
 ): Promise<void> {
@@ -1426,7 +1455,7 @@ export async function convertToSpeech(
       name: 'Custom Voice',
       shortName: 'custom-voice',
       gender: 'Male' as const,
-      locale: 'en', // Will be overridden by actual language selection
+      locale: normalizeTTSLanguage(options.language),
       provider: 'coqui' as const
     }
   }
@@ -1672,7 +1701,7 @@ export async function convertToSpeech(
 export async function previewVoice(
   text: string,
   voiceShortName: string,
-  options: { rate?: string; sentencePause?: number; pitch?: number; timeStretch?: number; customVoiceId?: string; useRuaccent?: boolean } = {}
+  options: { rate?: string; sentencePause?: number; pitch?: number; timeStretch?: number; customVoiceId?: string; useRuaccent?: boolean; language?: string } = {}
 ): Promise<{ success: boolean; audioData?: string; error?: string }> {
   // Reset abort state
   previewAborted = false
@@ -1696,7 +1725,7 @@ export async function previewVoice(
       name: 'Custom Voice',
       shortName: 'custom-voice',
       gender: 'Male' as const,
-      locale: 'en',
+      locale: normalizeTTSLanguage(options.language),
       provider: 'coqui' as const
     }
   }

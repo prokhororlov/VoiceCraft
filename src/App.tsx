@@ -455,7 +455,7 @@ function App() {
     setError(null)
 
     const rate = formatSpeedRate(speed[0])
-    const options: Record<string, unknown> = { rate }
+    const options: Record<string, unknown> = { rate, language }
 
     if (selectedProvider === 'piper' && sentencePause[0] > 0) {
       options.sentencePause = sentencePause[0]
@@ -524,7 +524,7 @@ function App() {
 
     try {
       const rate = formatSpeedRate(speed[0])
-      const options: Record<string, unknown> = { rate }
+      const options: Record<string, unknown> = { rate, language }
 
       if (selectedProvider === 'piper' && sentencePause[0] > 0) {
         options.sentencePause = sentencePause[0]

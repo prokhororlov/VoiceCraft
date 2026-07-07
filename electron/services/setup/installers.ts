@@ -1244,6 +1244,13 @@ export async function installCoqui(
     const generateScript = getCoquiGenerateScriptContent()
     fs.writeFileSync(path.join(coquiPath, 'generate.py'), generateScript, 'utf-8')
 
+    // Copy TTS server script to tts_resources root.
+    // Coqui-only installs need this too; otherwise model loading fails with
+    // "TTS Server script not found" until another engine writes the file.
+    const ttsServerScript = getTTSServerScriptContent()
+    const ttsResourcesPath = path.dirname(coquiPath)
+    fs.writeFileSync(path.join(ttsResourcesPath, 'tts_server.py'), ttsServerScript, 'utf-8')
+
     onProgress({
       stage: 'coqui',
       progress: scaleProgress(85),

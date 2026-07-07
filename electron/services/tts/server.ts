@@ -4,6 +4,7 @@ import { exec, spawn, ChildProcess } from 'child_process'
 import { promisify } from 'util'
 import http from 'http'
 import { getResourcesPath, getSileroPythonExecutable, getCoquiPythonExecutable } from './utils'
+import { getTTSServerScriptContent } from '../setup/utils'
 
 const execAsync = promisify(exec)
 
@@ -100,6 +101,27 @@ export function getTTSServerScript(): string {
   return path.join(resourcesPath, 'tts_server.py')
 }
 
+function ensureTTSServerScript(): string {
+  const serverScript = getTTSServerScript()
+  const resourcesPath = getResourcesPath()
+  const expectedContent = getTTSServerScriptContent()
+
+  fs.mkdirSync(resourcesPath, { recursive: true })
+
+  if (!fs.existsSync(serverScript)) {
+    fs.writeFileSync(serverScript, expectedContent, 'utf-8')
+    console.log(`Created missing TTS server script: ${serverScript}`)
+  } else {
+    const currentContent = fs.readFileSync(serverScript, 'utf-8')
+    if (currentContent !== expectedContent) {
+      fs.writeFileSync(serverScript, expectedContent, 'utf-8')
+      console.log(`Updated TTS server script: ${serverScript}`)
+    }
+  }
+
+  return serverScript
+}
+
 export function getTTSServerPythonExecutable(): string {
   // Prefer Coqui's venv as it has all dependencies (including TTS module)
   // Silero's venv doesn't have the TTS module which causes "No module named 'TTS'" error
@@ -146,7 +168,7 @@ export async function startTTSServer(): Promise<void> {
     await killOrphanTTSServers()
 
     const pythonExe = getTTSServerPythonExecutable()
-    const serverScript = getTTSServerScript()
+    const serverScript = ensureTTSServerScript()
 
     if (!fs.existsSync(pythonExe)) {
       throw new Error('Python environment not found. Please install Silero or Coqui first.')
