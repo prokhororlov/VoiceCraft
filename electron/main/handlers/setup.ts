@@ -8,6 +8,7 @@ import {
   SetupProgress,
   installSilero,
   installCoqui,
+  installBark,
   checkPythonAvailable,
   installPiperVoice,
   installRHVoiceCore,
@@ -82,6 +83,18 @@ export function registerSetupHandlers() {
     try {
       await stopTTSServer()
       const result = await installCoqui((progress) => {
+        event.sender.send('setup-progress', progress)
+      }, accelerator)
+      return result
+    } catch (error) {
+      return { success: false, error: (error as Error).message }
+    }
+  })
+
+  ipcMain.handle('install-bark', async (event, accelerator: AcceleratorType = 'cpu') => {
+    try {
+      await stopTTSServer()
+      const result = await installBark((progress) => {
         event.sender.send('setup-progress', progress)
       }, accelerator)
       return result

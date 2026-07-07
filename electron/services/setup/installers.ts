@@ -12,9 +12,11 @@ import {
   getCoquiPath,
   getSileroPathForAccelerator,
   getCoquiPathForAccelerator,
+  getBarkPathForAccelerator,
   setActiveAccelerator,
   getEmbeddedPythonPath,
-  getEmbeddedPythonExe
+  getEmbeddedPythonExe,
+  AcceleratedEngine
 } from './paths'
 import {
   runPipWithProgress,
@@ -22,6 +24,7 @@ import {
   extractZip,
   getGenerateScriptContent,
   getCoquiGenerateScriptContent,
+  getBarkGenerateScriptContent,
   getTTSServerScriptContent,
   findVcvarsallPath
 } from './utils'
@@ -42,15 +45,17 @@ const PYTORCH_INDEX_URLS: Partial<Record<AcceleratorType, string>> = {
 }
 
 // Get accelerator config file path for a specific accelerator
-function getAcceleratorConfigPath(engine: 'silero' | 'coqui', accelerator: AcceleratorType): string {
+function getAcceleratorConfigPath(engine: AcceleratedEngine, accelerator: AcceleratorType): string {
   const basePath = engine === 'silero'
     ? getSileroPathForAccelerator(accelerator)
-    : getCoquiPathForAccelerator(accelerator)
+    : engine === 'coqui'
+      ? getCoquiPathForAccelerator(accelerator)
+      : getBarkPathForAccelerator(accelerator)
   return path.join(basePath, 'accelerator.json')
 }
 
 // Save accelerator config
-function saveAcceleratorConfig(engine: 'silero' | 'coqui', accelerator: AcceleratorType, pytorchVersion?: string): void {
+function saveAcceleratorConfig(engine: AcceleratedEngine, accelerator: AcceleratorType, pytorchVersion?: string): void {
   const config: AcceleratorConfig = {
     accelerator,
     installedAt: new Date().toISOString(),
@@ -1427,6 +1432,198 @@ print("Model downloaded successfully")
       stage: 'coqui',
       progress: 100,
       details: 'Coqui TTS installation complete!'
+    })
+
+    return { success: true }
+  } catch (error) {
+    return { success: false, error: (error as Error).message }
+  }
+}
+
+// Install Bark Small TTS (Suno Bark via Transformers)
+export async function installBark(
+  onProgress: (progress: SetupProgress) => void,
+  accelerator: AcceleratorType = 'cpu'
+): Promise<{ success: boolean; error?: string }> {
+  const toolkitCheck = checkGPUToolkit(accelerator)
+  if (!toolkitCheck.available) {
+    return { success: false, error: toolkitCheck.error || toolkitCheck.message }
+  }
+
+  if (!checkEmbeddedPythonInstalled()) {
+    onProgress({
+      stage: 'bark',
+      progress: 0,
+      details: 'Python not found. Installing embedded Python...'
+    })
+
+    const pythonResult = await installEmbeddedPython((p) => {
+      onProgress({
+        stage: 'bark',
+        progress: Math.round(p.progress * 0.05),
+        details: p.details
+      })
+    })
+
+    if (!pythonResult.success) {
+      return {
+        success: false,
+        error: `Failed to install embedded Python: ${pythonResult.error}`
+      }
+    }
+  }
+
+  const barkPath = getBarkPathForAccelerator(accelerator)
+  const { copyPythonForEngine, checkEnginePythonInstalled } = await import('./python')
+  const { getEnginePythonExe } = await import('./paths')
+  const targetPython = getEnginePythonExe('bark', accelerator)
+  const scaleProgress = (p: number) => Math.min(100, Math.round(p))
+
+  try {
+    if (!existsSync(barkPath)) {
+      mkdirSync(barkPath, { recursive: true })
+    }
+
+    if (!checkEnginePythonInstalled('bark', accelerator)) {
+      onProgress({
+        stage: 'bark',
+        progress: scaleProgress(5),
+        details: 'Copying Python environment...'
+      })
+
+      const copyResult = await copyPythonForEngine('bark', accelerator, (p) => {
+        onProgress({
+          stage: 'bark',
+          progress: scaleProgress(5 + Math.round(p.progress * 0.03)),
+          details: p.details
+        })
+      })
+
+      if (!copyResult.success) {
+        return { success: false, error: copyResult.error || 'Failed to copy Python environment' }
+      }
+    }
+
+    const acceleratorLabel = accelerator === 'cuda' ? 'CUDA' : accelerator === 'directml' ? 'DirectML' : 'CPU'
+    const pytorchSize = accelerator === 'cuda' ? '~2.3 GB' : accelerator === 'directml' ? '~250 MB' : '~200 MB'
+
+    onProgress({
+      stage: 'bark',
+      progress: scaleProgress(10),
+      details: `Downloading PyTorch ${acceleratorLabel} (${pytorchSize})...`
+    })
+
+    const pytorchPackages = accelerator === 'directml'
+      ? 'torch-directml'
+      : 'torch==2.5.1'
+    const indexUrl = PYTORCH_INDEX_URLS[accelerator]
+
+    const pytorchResult = await runPipWithProgress(
+      targetPython,
+      pytorchPackages,
+      {
+        indexUrl,
+        timeout: accelerator === 'cpu' ? 900000 : 2400000,
+        onProgress: (info) => {
+          const progress = scaleProgress(10 + Math.round((info.percentage || 0) * 0.35))
+          let details = `Downloading PyTorch ${acceleratorLabel} (${pytorchSize})...`
+          if (info.phase === 'downloading' && info.percentage !== undefined) {
+            details = `Downloading ${info.package}: ${info.percentage}%`
+          } else if (info.phase === 'installing') {
+            details = 'Installing PyTorch...'
+          }
+          onProgress({ stage: 'bark', progress, details })
+        }
+      }
+    )
+
+    if (!pytorchResult.success) {
+      return { success: false, error: pytorchResult.error || 'Failed to install PyTorch' }
+    }
+
+    onProgress({
+      stage: 'bark',
+      progress: scaleProgress(45),
+      details: 'Installing Bark dependencies...'
+    })
+
+    const depsResult = await runPipWithProgress(
+      targetPython,
+      'transformers==4.46.3 scipy==1.14.1 accelerate==1.1.1 numpy==1.26.4',
+      {
+        timeout: 900000,
+        onProgress: (info) => {
+          const progress = scaleProgress(45 + Math.round((info.percentage || 0) * 0.25))
+          let details = 'Installing Bark dependencies...'
+          if (info.phase === 'downloading' && info.percentage !== undefined) {
+            details = `Downloading ${info.package}: ${info.percentage}%`
+          } else if (info.phase === 'installing') {
+            details = 'Installing dependencies...'
+          }
+          onProgress({ stage: 'bark', progress, details })
+        }
+      }
+    )
+
+    if (!depsResult.success) {
+      return { success: false, error: depsResult.error || 'Failed to install Bark dependencies' }
+    }
+
+    onProgress({
+      stage: 'bark',
+      progress: scaleProgress(72),
+      details: 'Setting up generation script...'
+    })
+
+    const generateScript = getBarkGenerateScriptContent()
+    fs.writeFileSync(path.join(barkPath, 'generate.py'), generateScript, 'utf-8')
+
+    onProgress({
+      stage: 'bark',
+      progress: scaleProgress(75),
+      details: 'Verifying Bark dependencies...'
+    })
+
+    const verifyCommand = accelerator === 'directml'
+      ? `import torch; import torch_directml; from transformers import AutoProcessor, BarkModel; print('OK')`
+      : `import torch; from transformers import AutoProcessor, BarkModel; print('OK')`
+    const { stdout } = await execAsync(`"${targetPython}" -c "${verifyCommand}"`, { timeout: 120000 })
+    if (!stdout.includes('OK')) {
+      return { success: false, error: 'Bark verification failed' }
+    }
+
+    onProgress({
+      stage: 'bark',
+      progress: scaleProgress(80),
+      details: 'Pre-downloading Bark Small model...'
+    })
+
+    const preloadScript = `from pathlib import Path
+from transformers import AutoProcessor, BarkModel
+cache_dir = Path(r"${path.join(barkPath, 'models').replace(/\\/g, '\\\\')}")
+cache_dir.mkdir(parents=True, exist_ok=True)
+AutoProcessor.from_pretrained("suno/bark-small", cache_dir=str(cache_dir))
+BarkModel.from_pretrained("suno/bark-small", cache_dir=str(cache_dir))
+print("OK")
+`
+    const preloadScriptPath = path.join(barkPath, 'preload_model.py')
+    fs.writeFileSync(preloadScriptPath, preloadScript, 'utf-8')
+
+    try {
+      await execAsync(`"${targetPython}" "${preloadScriptPath}"`, {
+        timeout: 1800000,
+        maxBuffer: 1024 * 1024 * 10
+      })
+    } finally {
+      try { unlinkSync(preloadScriptPath) } catch {}
+    }
+
+    saveAcceleratorConfig('bark', accelerator)
+
+    onProgress({
+      stage: 'bark',
+      progress: 100,
+      details: 'Bark Small installation complete!'
     })
 
     return { success: true }

@@ -671,6 +671,159 @@ if __name__ == "__main__":
 `
 }
 
+// Bark Small generate script content
+export function getBarkGenerateScriptContent(): string {
+  return `#!/usr/bin/env python
+"""Bark Small TTS generation script."""
+
+import argparse
+import os
+import sys
+from pathlib import Path
+
+import numpy as np
+import torch
+from scipy.io.wavfile import write as write_wav
+from transformers import AutoProcessor, BarkModel
+
+
+MODEL_ID = "suno/bark-small"
+SAMPLE_RATE = 24000
+
+
+def normalize_language(language):
+    lang = (language or "en").lower().replace("_", "-")
+    if lang in ("ru", "ru-ru"):
+        return "ru"
+    return "en"
+
+
+def default_voice_preset(language, gender):
+    lang = normalize_language(language)
+    if gender == "female":
+        return f"v2/{lang}_speaker_6"
+    return f"v2/{lang}_speaker_0"
+
+
+def clean_text(text):
+    return " ".join((text or "").replace("\\r", " ").replace("\\n", " ").split()).strip()
+
+
+def select_device(accelerator):
+    accelerator = (accelerator or "cpu").lower()
+
+    if accelerator == "cuda" and torch.cuda.is_available():
+        return torch.device("cuda"), "cuda"
+
+    if accelerator == "directml" and sys.platform == "win32":
+        try:
+            import torch_directml
+
+            count = torch_directml.device_count() if hasattr(torch_directml, "device_count") else 1
+            selected_index = 0
+            selected_name = torch_directml.device_name(0)
+            for index in range(count):
+                name = torch_directml.device_name(index)
+                if "AMD" in name.upper() or "RADEON" in name.upper():
+                    selected_index = index
+                    selected_name = name
+                    break
+            print(f"Using DirectML device: {selected_name}", file=sys.stderr)
+            return torch_directml.device(selected_index), "directml"
+        except Exception as exc:
+            print(f"DirectML unavailable, using CPU: {exc}", file=sys.stderr)
+
+    return torch.device("cpu"), "cpu"
+
+
+def load_model(cache_dir, device, backend):
+    processor = AutoProcessor.from_pretrained(MODEL_ID, cache_dir=cache_dir)
+    model = BarkModel.from_pretrained(MODEL_ID, cache_dir=cache_dir)
+    model.eval()
+
+    if backend == "cuda":
+        model = model.to(device)
+    elif backend == "directml":
+        try:
+            model = model.to(device)
+        except Exception as exc:
+            print(f"Could not move Bark model to DirectML, using CPU: {exc}", file=sys.stderr)
+            device = torch.device("cpu")
+            backend = "cpu"
+
+    return processor, model, device, backend
+
+
+def move_to_device(value, device):
+    if hasattr(value, "to"):
+        return value.to(device)
+    if isinstance(value, dict):
+        return {key: move_to_device(item, device) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return type(value)(move_to_device(item, device) for item in value)
+    return value
+
+
+def generate(text, output, voice_preset, language, accelerator):
+    text = clean_text(text)
+    if not text:
+        raise ValueError("Text is empty")
+
+    script_dir = Path(__file__).resolve().parent
+    cache_dir = script_dir / "models"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    device, backend = select_device(accelerator)
+    processor, model, device, backend = load_model(str(cache_dir), device, backend)
+
+    inputs = processor(text, voice_preset=voice_preset, return_tensors="pt")
+    inputs = move_to_device(inputs, device)
+
+    try:
+        with torch.no_grad():
+            audio = model.generate(**inputs, do_sample=True)
+    except Exception as exc:
+        if backend == "directml":
+            print(f"DirectML generation failed, retrying on CPU: {exc}", file=sys.stderr)
+            device = torch.device("cpu")
+            model = model.to(device)
+            inputs = move_to_device(inputs, device)
+            with torch.no_grad():
+                audio = model.generate(**inputs, do_sample=True)
+        else:
+            raise
+
+    audio_array = audio.detach().cpu().numpy().squeeze()
+    if audio_array.dtype != np.float32:
+        audio_array = audio_array.astype(np.float32)
+    audio_array = np.clip(audio_array, -1.0, 1.0)
+
+    output_path = Path(output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    write_wav(str(output_path), SAMPLE_RATE, audio_array)
+    print(f"Audio saved to {output_path}")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Generate speech using Bark Small")
+    parser.add_argument("--text", required=True)
+    parser.add_argument("--output", required=True)
+    parser.add_argument("--language", default="en")
+    parser.add_argument("--voice_preset")
+    parser.add_argument("--gender", choices=["male", "female"], default="male")
+    parser.add_argument("--accelerator", choices=["cpu", "cuda", "directml"], default="cpu")
+    args = parser.parse_args()
+
+    voice_preset = args.voice_preset or default_voice_preset(args.language, args.gender)
+    os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+    generate(args.text, args.output, voice_preset, args.language, args.accelerator)
+
+
+if __name__ == "__main__":
+    main()
+`
+}
+
 // TTS Server script content - Universal server for Silero and Coqui
 export function getTTSServerScriptContent(): string {
   return `#!/usr/bin/env python3

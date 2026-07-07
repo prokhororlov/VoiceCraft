@@ -3,7 +3,7 @@ import path from 'path'
 import { existsSync, mkdirSync, unlinkSync } from 'fs'
 import { promisify } from 'util'
 import { exec, spawn } from 'child_process'
-import { getEmbeddedPythonPath, getEmbeddedPythonExe, getEnginePythonPath, getEnginePythonExe, getCachePath } from './paths'
+import { getEmbeddedPythonPath, getEmbeddedPythonExe, getEnginePythonPath, getEnginePythonExe, getCachePath, AcceleratedEngine } from './paths'
 import { downloadFile, extractZip } from './utils'
 import type { SetupProgress, AcceleratorType } from './types'
 
@@ -277,7 +277,7 @@ export async function getPythonInfo(): Promise<{ available: boolean; path: strin
 }
 
 // Check if Python is installed for specific engine+accelerator
-export function checkEnginePythonInstalled(engine: 'silero' | 'coqui', accelerator: AcceleratorType): boolean {
+export function checkEnginePythonInstalled(engine: AcceleratedEngine, accelerator: AcceleratorType): boolean {
   const pythonExe = getEnginePythonExe(engine, accelerator)
   const pythonPath = getEnginePythonPath(engine, accelerator)
   const pipDir = path.join(pythonPath, 'Lib', 'site-packages', 'pip')
@@ -287,7 +287,7 @@ export function checkEnginePythonInstalled(engine: 'silero' | 'coqui', accelerat
 // Install fresh embedded Python directly to engine-specific directory (silero-cpu/python, coqui-cuda/python, etc.)
 // This provides complete isolation for each accelerator version with clean dependencies
 export async function copyPythonForEngine(
-  engine: 'silero' | 'coqui',
+  engine: AcceleratedEngine,
   accelerator: AcceleratorType,
   onProgress?: (progress: SetupProgress) => void
 ): Promise<{ success: boolean; error?: string }> {

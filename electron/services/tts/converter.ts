@@ -12,6 +12,9 @@ import {
   getSileroScript,
   getCoquiPythonExecutable,
   getCoquiScript,
+  getBarkPythonExecutable,
+  getBarkScript,
+  getBarkAccelerator,
   getFfmpegExecutable
 } from './utils'
 import {
@@ -24,7 +27,8 @@ import {
   PIPER_VOICES,
   SILERO_VOICES,
   ELEVENLABS_VOICES,
-  COQUI_VOICES
+  COQUI_VOICES,
+  BARK_VOICES
 } from './voices'
 import { getElevenLabsApiKey } from './providers'
 import { getCustomVoiceAudioPath } from './customVoices'
@@ -785,6 +789,61 @@ async function generateSpeechWithCoqui(
   })
 }
 
+// ============= Bark Small Implementation =============
+async function generateSpeechWithBark(
+  text: string,
+  voicePreset: string,
+  language: string,
+  outputPath: string
+): Promise<void> {
+  const pythonExe = getBarkPythonExecutable()
+  const barkScript = getBarkScript()
+
+  if (!fs.existsSync(pythonExe)) {
+    throw new Error('Bark Python environment not found. Please install Bark Small.')
+  }
+
+  if (!fs.existsSync(barkScript)) {
+    throw new Error('Bark generation script not found.')
+  }
+
+  return new Promise<void>((resolve, reject) => {
+    const args = [
+      barkScript,
+      '--text', cleanTextForTTS(text),
+      '--language', language,
+      '--voice_preset', voicePreset,
+      '--accelerator', getBarkAccelerator(),
+      '--output', outputPath
+    ]
+
+    const barkProcess = spawn(pythonExe, args)
+    let stderr = ''
+
+    barkProcess.stderr?.on('data', (data) => {
+      stderr += data.toString()
+    })
+
+    barkProcess.on('error', (error) => {
+      reject(new Error(`Failed to start Bark: ${error.message}`))
+    })
+
+    barkProcess.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(`Bark exited with code ${code}: ${stderr}`))
+        return
+      }
+
+      if (!fs.existsSync(outputPath) || fs.statSync(outputPath).size === 0) {
+        reject(new Error('Bark failed to generate audio file'))
+        return
+      }
+
+      resolve()
+    })
+  })
+}
+
 // ============= Abortable Preview Versions =============
 
 // RHVoice abortable version for preview
@@ -1039,6 +1098,66 @@ async function generateSpeechWithCoquiForPreview(
   })
 }
 
+// Bark abortable version for preview
+async function generateSpeechWithBarkForPreview(
+  text: string,
+  voicePreset: string,
+  language: string,
+  outputPath: string
+): Promise<void> {
+  const pythonExe = getBarkPythonExecutable()
+  const barkScript = getBarkScript()
+
+  if (!fs.existsSync(pythonExe)) {
+    throw new Error('Bark Python environment not found. Please install Bark Small.')
+  }
+
+  if (!fs.existsSync(barkScript)) {
+    throw new Error('Bark generation script not found.')
+  }
+
+  return new Promise<void>((resolve, reject) => {
+    const args = [
+      barkScript,
+      '--text', cleanTextForTTS(text),
+      '--language', language,
+      '--voice_preset', voicePreset,
+      '--accelerator', getBarkAccelerator(),
+      '--output', outputPath
+    ]
+
+    const barkProcess = spawn(pythonExe, args)
+    currentPreviewProcess = barkProcess
+    let stderr = ''
+
+    barkProcess.stderr?.on('data', (data) => {
+      stderr += data.toString()
+    })
+
+    barkProcess.on('error', (error) => {
+      currentPreviewProcess = null
+      reject(new Error(`Failed to start Bark: ${error.message}`))
+    })
+
+    barkProcess.on('close', (code) => {
+      currentPreviewProcess = null
+      if (previewAborted) {
+        reject(new Error('Preview cancelled'))
+        return
+      }
+      if (code !== 0) {
+        reject(new Error(`Bark exited with code ${code}: ${stderr}`))
+        return
+      }
+      if (!fs.existsSync(outputPath) || fs.statSync(outputPath).size === 0) {
+        reject(new Error('Bark failed to generate audio file'))
+        return
+      }
+      resolve()
+    })
+  })
+}
+
 // ============= ElevenLabs Implementation =============
 async function generateSpeechWithElevenLabs(
   text: string,
@@ -1158,6 +1277,13 @@ async function generateChunkAudio(
         throw new Error('Speaker name or custom voice required for Coqui')
       }
       await generateSpeechWithCoqui(chunk, voiceInfo.modelPath || '', voiceInfo.locale, outputFile, options.speakerWav, options.useRuaccent)
+      break
+
+    case 'bark':
+      if (!voiceInfo.modelPath) {
+        throw new Error('Voice preset required for Bark')
+      }
+      await generateSpeechWithBark(chunk, voiceInfo.modelPath, voiceInfo.locale, outputFile)
       break
 
     default:
@@ -1443,7 +1569,8 @@ export async function convertToSpeech(
     ...Object.values(PIPER_VOICES).flat(),
     ...Object.values(SILERO_VOICES).flat(),
     ...Object.values(ELEVENLABS_VOICES).flat(),
-    ...Object.values(COQUI_VOICES).flat()
+    ...Object.values(COQUI_VOICES).flat(),
+    ...Object.values(BARK_VOICES).flat()
   ]
 
   voiceInfo = allVoices.find(v => v.shortName === voiceShortName)
@@ -1473,12 +1600,13 @@ export async function convertToSpeech(
     }
   }
 
-  // Silero and Coqui have token limits in the positional encoder.
+  // Silero, Coqui and Bark have token/context limits.
   // Cyrillic/non-Latin text expands to more tokens, so use smaller chunks.
-  // Coqui XTTS is especially sensitive, use even smaller chunks (250 chars)
+  // Coqui XTTS is especially sensitive, Bark is optimized for short clips.
   const maxChunkLength = voiceInfo.provider === 'coqui' ? 250 :
+                         voiceInfo.provider === 'bark' ? 350 :
                          voiceInfo.provider === 'silero' ? 500 : 1000
-  // Pass language to convert numbers to words for Silero/Coqui
+  // Pass language to convert numbers to words for neural providers
   const language = voiceInfo.locale || 'en'
   const chunks = splitIntoChunks(text, maxChunkLength, language)
 
@@ -1487,8 +1615,8 @@ export async function convertToSpeech(
   }
 
   const totalChunks = chunks.length
-  // Coqui has smaller chunks, so use larger parts (200 instead of 100)
-  const chunksPerPart = voiceInfo.provider === 'coqui' ? 200 : 100
+  // Coqui and Bark have smaller chunks, so use larger parts (200 instead of 100)
+  const chunksPerPart = voiceInfo.provider === 'coqui' || voiceInfo.provider === 'bark' ? 200 : 100
   const totalParts = Math.ceil(totalChunks / chunksPerPart)
 
   // Each chunk can produce multiple files if it was split due to errors
@@ -1500,8 +1628,8 @@ export async function convertToSpeech(
   const retryDelay = 1000
 
   // Concurrency limits depend on provider
-  // Coqui XTTS is slow and memory-intensive, process sequentially
-  const concurrentLimit = voiceInfo.provider === 'coqui' ? 1 :
+  // Coqui XTTS and Bark are slow and memory-intensive, process sequentially
+  const concurrentLimit = voiceInfo.provider === 'coqui' || voiceInfo.provider === 'bark' ? 1 :
                          voiceInfo.provider === 'silero' ? 5 :
                          voiceInfo.provider === 'piper' ? 10 :
                          voiceInfo.provider === 'elevenlabs' ? 3 : 30
@@ -1714,7 +1842,8 @@ export async function previewVoice(
     ...Object.values(PIPER_VOICES).flat(),
     ...Object.values(SILERO_VOICES).flat(),
     ...Object.values(ELEVENLABS_VOICES).flat(),
-    ...Object.values(COQUI_VOICES).flat()
+    ...Object.values(COQUI_VOICES).flat(),
+    ...Object.values(BARK_VOICES).flat()
   ]
 
   let voiceInfo = allVoices.find(v => v.shortName === voiceShortName)
@@ -1755,9 +1884,9 @@ export async function previewVoice(
 
   console.log('Preview paths:', { tempDir, tempWavFile, tempMp3File, voice: voiceShortName })
 
-  // Convert numbers to words for Silero and Coqui providers
+  // Convert numbers to words for neural providers
   let processedText = text
-  if (voiceInfo.provider === 'silero' || voiceInfo.provider === 'coqui') {
+  if (voiceInfo.provider === 'silero' || voiceInfo.provider === 'coqui' || voiceInfo.provider === 'bark') {
     processedText = cleanTextForTTS(text)
     processedText = convertNumbersToWords(processedText, voiceInfo.locale || 'en')
   }
@@ -1796,6 +1925,13 @@ export async function previewVoice(
           return { success: false, error: 'Speaker name or custom voice required for Coqui' }
         }
         await generateSpeechWithCoquiForPreview(processedText, voiceInfo.modelPath || '', voiceInfo.locale, tempWavFile, speakerWav, options.useRuaccent)
+        break
+
+      case 'bark':
+        if (!voiceInfo.modelPath) {
+          return { success: false, error: 'Voice preset required for Bark' }
+        }
+        await generateSpeechWithBarkForPreview(processedText, voiceInfo.modelPath, voiceInfo.locale, tempWavFile)
         break
 
       default:

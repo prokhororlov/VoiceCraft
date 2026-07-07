@@ -20,8 +20,10 @@ export {
   getFfmpegPath,
   getSileroPath,
   getCoquiPath,
+  getBarkPath,
   getSileroPathForAccelerator,
   getCoquiPathForAccelerator,
+  getBarkPathForAccelerator,
   getActiveAccelerator,
   setActiveAccelerator,
   getInstalledAccelerators,
@@ -46,8 +48,10 @@ export {
 export {
   checkSileroInstalled,
   checkCoquiInstalled,
+  checkBarkInstalled,
   checkSileroInstalledForAccelerator,
   checkCoquiInstalledForAccelerator,
+  checkBarkInstalledForAccelerator,
   checkDependencies,
   needsSetup,
   checkDependenciesAsync
@@ -60,6 +64,7 @@ export {
   extractZip,
   getGenerateScriptContent,
   getCoquiGenerateScriptContent,
+  getBarkGenerateScriptContent,
   getTTSServerScriptContent,
   findVcvarsallPath
 } from './utils'
@@ -72,6 +77,7 @@ export {
   installFfmpeg,
   installSilero,
   installCoqui,
+  installBark,
   runSetup,
   getEstimatedDownloadSize
 } from './installers'

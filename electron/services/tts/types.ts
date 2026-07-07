@@ -1,4 +1,4 @@
-export type TTSProvider = 'rhvoice' | 'piper' | 'silero' | 'elevenlabs' | 'coqui'
+export type TTSProvider = 'rhvoice' | 'piper' | 'silero' | 'elevenlabs' | 'coqui' | 'bark'
 
 export interface VoiceInfo {
   name: string

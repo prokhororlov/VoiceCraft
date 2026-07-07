@@ -10,6 +10,7 @@ import { ProviderSelector } from '@/components/provider/ProviderSelector'
 import { ElevenLabsSetup } from '@/components/provider/ElevenLabsSetup'
 import { SileroSetup } from '@/components/provider/SileroSetup'
 import { CoquiSetup } from '@/components/provider/CoquiSetup'
+import { BarkSetup } from '@/components/provider/BarkSetup'
 import { PiperSetup } from '@/components/provider/PiperSetup'
 import { RHVoiceSetup } from '@/components/provider/RHVoiceSetup'
 import { TTSModelPanel } from '@/components/tts/TTSModelPanel'
@@ -114,6 +115,13 @@ function App() {
   const [coquiInstallProgress, setCoquiInstallProgress] = useState('')
   const [coquiInstallPercent, setCoquiInstallPercent] = useState(0)
   const [coquiInstallAccelerator, setCoquiInstallAccelerator] = useState<'cpu' | 'cuda' | 'directml'>('cpu')
+
+  // Bark
+  const [barkInstalled, setBarkInstalled] = useState(false)
+  const [isInstallingBark, setIsInstallingBark] = useState(false)
+  const [barkInstallProgress, setBarkInstallProgress] = useState('')
+  const [barkInstallPercent, setBarkInstallPercent] = useState(0)
+  const [barkInstallAccelerator, setBarkInstallAccelerator] = useState<'cpu' | 'cuda' | 'directml'>('cpu')
 
   // Piper
   const [piperInstalled, setPiperInstalled] = useState(false)
@@ -244,8 +252,9 @@ function App() {
         const deps = await window.electronAPI.checkDependenciesAsync()
         setSileroInstalled(deps.silero)
         setCoquiInstalled(deps.coqui)
+        setBarkInstalled(deps.bark)
         setCoquiBuildToolsAvailable(deps.coquiBuildToolsAvailable)
-        setPythonAvailable(deps.sileroAvailable || deps.coquiAvailable)
+        setPythonAvailable(deps.sileroAvailable || deps.coquiAvailable || deps.barkAvailable)
         setPiperInstalled(deps.piper)
         setRhvoiceCoreInstalled(deps.rhvoiceCore)
 
@@ -253,8 +262,10 @@ function App() {
         setAvailableAccelerators(accelerators)
         if (accelerators.directml.available) {
           setCoquiInstallAccelerator('directml')
+          setBarkInstallAccelerator('directml')
         } else if (accelerators.cuda.available) {
           setCoquiInstallAccelerator('cuda')
+          setBarkInstallAccelerator('cuda')
         }
 
         if (deps.silero) {
@@ -305,7 +316,7 @@ function App() {
       }
     }
     loadVoices()
-  }, [language, needsSetup, sileroInstalled, coquiInstalled, rhvoiceCoreInstalled, piperInstalled])
+  }, [language, needsSetup, sileroInstalled, coquiInstalled, barkInstalled, rhvoiceCoreInstalled, piperInstalled])
 
   // Select default voice when provider changes
   useEffect(() => {
@@ -324,7 +335,7 @@ function App() {
       const currentVoiceValid = providerVoices.some(v => v.shortName === selectedVoice)
       if (currentVoiceValid) return
       setSelectedVoice(providerVoices[0].shortName)
-    } else if (selectedProvider === 'silero' || selectedProvider === 'coqui') {
+    } else if (selectedProvider === 'silero' || selectedProvider === 'coqui' || selectedProvider === 'bark') {
       setSelectedVoice('')
     } else if (voices.length > 0) {
       setSelectedProvider('piper')
@@ -787,6 +798,34 @@ function App() {
     }
   }
 
+  const handleInstallBark = async () => {
+    if (!window.electronAPI) return
+    setIsInstallingBark(true)
+    setBarkInstallProgress('Starting installation...')
+    setBarkInstallPercent(0)
+
+    const unsubscribe = window.electronAPI.onSetupProgress(({ progress, details }) => {
+      setBarkInstallProgress(details)
+      setBarkInstallPercent(progress)
+    })
+
+    try {
+      const result = await window.electronAPI.installBark(barkInstallAccelerator)
+      if (result.success) {
+        setBarkInstalled(true)
+      } else {
+        setError(result.error || 'Bark installation failed')
+      }
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setIsInstallingBark(false)
+      setBarkInstallProgress('')
+      setBarkInstallPercent(0)
+      unsubscribe()
+    }
+  }
+
   const handleInstallPiper = async () => {
     if (!window.electronAPI) return
     setIsInstallingPiperCore(true)
@@ -925,6 +964,7 @@ function App() {
     switch (selectedProvider) {
       case 'silero': return sileroInstalled
       case 'coqui': return coquiInstalled
+      case 'bark': return barkInstalled
       case 'elevenlabs': return hasApiKey
       case 'piper': return piperInstalled
       case 'rhvoice': return rhvoiceCoreInstalled
@@ -940,7 +980,7 @@ function App() {
   })()
 
   const isAnyInstallationInProgress =
-    isInstallingSilero || isInstallingCoqui || isInstallingPiperCore ||
+    isInstallingSilero || isInstallingCoqui || isInstallingBark || isInstallingPiperCore ||
     isInstallingRHVoiceCore || installingVoice !== null || installingRHVoice !== null
 
   const isModelLoadedForLanguage = (() => {
@@ -1053,6 +1093,22 @@ function App() {
                     selectedAccelerator={coquiInstallAccelerator}
                     onAcceleratorChange={setCoquiInstallAccelerator}
                     onInstall={handleInstallCoqui}
+                    onRefreshAccelerators={refreshAccelerators}
+                    onOpenExternal={(url) => window.electronAPI.openExternal(url)}
+                  />
+                )}
+
+                {/* Bark Setup */}
+                {selectedProvider === 'bark' && !barkInstalled && (
+                  <BarkSetup
+                    isInstalling={isInstallingBark}
+                    installProgress={barkInstallProgress}
+                    installPercent={barkInstallPercent}
+                    pythonAvailable={pythonAvailable}
+                    availableAccelerators={availableAccelerators}
+                    selectedAccelerator={barkInstallAccelerator}
+                    onAcceleratorChange={setBarkInstallAccelerator}
+                    onInstall={handleInstallBark}
                     onRefreshAccelerators={refreshAccelerators}
                     onOpenExternal={(url) => window.electronAPI.openExternal(url)}
                   />

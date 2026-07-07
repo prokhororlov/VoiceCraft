@@ -3,6 +3,8 @@ import fs from 'fs'
 import { app } from 'electron'
 import type { AcceleratorType } from './types'
 
+export type AcceleratedEngine = 'silero' | 'coqui' | 'bark'
+
 // Get path to resources
 export function getResourcesPath(): string {
   if (app.isPackaged) {
@@ -26,7 +28,7 @@ function getAcceleratorSettingsPath(): string {
 }
 
 // Get/set active accelerator for an engine
-export function getActiveAccelerator(engine: 'silero' | 'coqui'): AcceleratorType {
+export function getActiveAccelerator(engine: AcceleratedEngine): AcceleratorType {
   try {
     const settingsPath = getAcceleratorSettingsPath()
     if (fs.existsSync(settingsPath)) {
@@ -39,7 +41,7 @@ export function getActiveAccelerator(engine: 'silero' | 'coqui'): AcceleratorTyp
   return 'cpu'
 }
 
-export function setActiveAccelerator(engine: 'silero' | 'coqui', accelerator: AcceleratorType): void {
+export function setActiveAccelerator(engine: AcceleratedEngine, accelerator: AcceleratorType): void {
   const settingsPath = getAcceleratorSettingsPath()
   let settings: Record<string, AcceleratorType> = {}
 
@@ -61,7 +63,7 @@ export function setActiveAccelerator(engine: 'silero' | 'coqui', accelerator: Ac
 }
 
 // Get all installed accelerators for an engine
-export function getInstalledAccelerators(engine: 'silero' | 'coqui'): AcceleratorType[] {
+export function getInstalledAccelerators(engine: AcceleratedEngine): AcceleratorType[] {
   const resourcesPath = getResourcesPath()
   const installed: AcceleratorType[] = []
 
@@ -87,6 +89,11 @@ export function getCoquiPathForAccelerator(accelerator: AcceleratorType): string
   return path.join(getResourcesPath(), `coqui-${accelerator}`)
 }
 
+// Get path to Bark for specific accelerator
+export function getBarkPathForAccelerator(accelerator: AcceleratorType): string {
+  return path.join(getResourcesPath(), `bark-${accelerator}`)
+}
+
 // Get path to active Silero installation (based on settings)
 export function getSileroPath(): string {
   const activeAccelerator = getActiveAccelerator('silero')
@@ -97,6 +104,12 @@ export function getSileroPath(): string {
 export function getCoquiPath(): string {
   const activeAccelerator = getActiveAccelerator('coqui')
   return getCoquiPathForAccelerator(activeAccelerator)
+}
+
+// Get path to active Bark installation (based on settings)
+export function getBarkPath(): string {
+  const activeAccelerator = getActiveAccelerator('bark')
+  return getBarkPathForAccelerator(activeAccelerator)
 }
 
 export function getRHVoicePath(): string {
@@ -119,14 +132,16 @@ export function getEmbeddedPythonExe(): string {
 }
 
 // Get path to Python for specific engine+accelerator (silero-cpu/python, silero-cuda/python, etc.)
-export function getEnginePythonPath(engine: 'silero' | 'coqui', accelerator: AcceleratorType): string {
+export function getEnginePythonPath(engine: AcceleratedEngine, accelerator: AcceleratorType): string {
   const enginePath = engine === 'silero'
     ? getSileroPathForAccelerator(accelerator)
-    : getCoquiPathForAccelerator(accelerator)
+    : engine === 'coqui'
+      ? getCoquiPathForAccelerator(accelerator)
+      : getBarkPathForAccelerator(accelerator)
   return path.join(enginePath, 'python')
 }
 
 // Get path to Python executable for specific engine+accelerator
-export function getEnginePythonExe(engine: 'silero' | 'coqui', accelerator: AcceleratorType): string {
+export function getEnginePythonExe(engine: AcceleratedEngine, accelerator: AcceleratorType): string {
   return path.join(getEnginePythonPath(engine, accelerator), 'python.exe')
 }

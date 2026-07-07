@@ -5,8 +5,10 @@ import {
   getFfmpegPath,
   getSileroPath,
   getCoquiPath,
+  getBarkPath,
   getSileroPathForAccelerator,
   getCoquiPathForAccelerator,
+  getBarkPathForAccelerator,
   getInstalledAccelerators,
   getEmbeddedPythonExe,
   getEnginePythonExe
@@ -75,6 +77,34 @@ export function checkCoquiInstalledForAccelerator(accelerator: AcceleratorType):
   const configExists = existsSync(configFile)
 
   return pythonExists && scriptExists && configExists
+}
+
+// Check if Bark is installed for a specific accelerator
+export function checkBarkInstalledForAccelerator(accelerator: AcceleratorType): boolean {
+  const barkPath = getBarkPathForAccelerator(accelerator)
+  const enginePython = getEnginePythonExe('bark', accelerator)
+  const generateScript = path.join(barkPath, 'generate.py')
+  const configFile = path.join(barkPath, 'accelerator.json')
+
+  const pythonExists = existsSync(enginePython)
+  const scriptExists = existsSync(generateScript)
+  const configExists = existsSync(configFile)
+
+  return pythonExists && scriptExists && configExists
+}
+
+// Check if Bark is set up and working (any accelerator version)
+export function checkBarkInstalled(): boolean {
+  const installedAccelerators = getInstalledAccelerators('bark')
+  if (installedAccelerators.length > 0) {
+    return true
+  }
+
+  const barkPath = path.join(path.dirname(getBarkPath()), 'bark')
+  const enginePython = path.join(barkPath, 'python', 'python.exe')
+  const generateScript = path.join(barkPath, 'generate.py')
+
+  return existsSync(enginePython) && existsSync(generateScript)
 }
 
 // Check if Coqui is set up and working (any accelerator version)
@@ -146,6 +176,9 @@ export function checkDependencies(): DependencyStatus {
   // Check Coqui
   const coquiInstalled = checkCoquiInstalled()
 
+  // Check Bark
+  const barkInstalled = checkBarkInstalled()
+
   return {
     piper: existsSync(piperExe),
     ffmpeg: existsSync(ffmpegExe),
@@ -154,6 +187,8 @@ export function checkDependencies(): DependencyStatus {
     coqui: coquiInstalled,
     coquiAvailable: false, // Will be set by async check
     coquiBuildToolsAvailable: false, // Will be set by async check
+    bark: barkInstalled,
+    barkAvailable: false, // Will be set by async check
     rhvoiceCore: false, // Will be set by async check
     rhvoiceVoices: [], // Will be set by async check
     piperVoices: {
@@ -176,6 +211,7 @@ export async function checkDependenciesAsync(): Promise<DependencyStatus> {
   const pythonCmd = await checkPythonAvailable()
   status.sileroAvailable = pythonCmd !== null
   status.coquiAvailable = pythonCmd !== null
+  status.barkAvailable = pythonCmd !== null
 
   // Check Build Tools for Coqui
   status.coquiBuildToolsAvailable = await checkBuildToolsAvailable()

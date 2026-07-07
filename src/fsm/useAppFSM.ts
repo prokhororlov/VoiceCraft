@@ -378,7 +378,7 @@ export function useAppFSM() {
   // Available providers based on network status
   const availableProviders = useMemo((): TTSProvider[] => {
     if (context.isOnline) {
-      return ['rhvoice', 'piper', 'silero', 'coqui', 'elevenlabs']
+      return ['rhvoice', 'piper', 'silero', 'coqui', 'bark', 'elevenlabs']
     }
     return [...OFFLINE_PROVIDERS]
   }, [context.isOnline])
@@ -397,6 +397,8 @@ export function useAppFSM() {
         return deps.silero && deps.ffmpeg
       case 'coqui':
         return deps.coqui && deps.ffmpeg
+      case 'bark':
+        return deps.bark && deps.ffmpeg
       case 'elevenlabs':
         return context.isOnline
       default:

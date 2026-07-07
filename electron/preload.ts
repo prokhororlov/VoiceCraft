@@ -26,7 +26,7 @@ export interface VoiceInfo {
   shortName: string
   gender: 'Male' | 'Female'
   locale: string
-  provider: 'system' | 'piper' | 'silero' | 'elevenlabs' | 'coqui'
+  provider: 'system' | 'piper' | 'silero' | 'elevenlabs' | 'coqui' | 'bark' | 'rhvoice'
   modelPath?: string
   voiceId?: string
   isInstalled?: boolean
@@ -51,6 +51,8 @@ export interface DependencyStatus {
   coqui: boolean
   coquiAvailable: boolean
   coquiBuildToolsAvailable: boolean
+  bark: boolean
+  barkAvailable: boolean
   rhvoiceCore: boolean
   rhvoiceVoices: string[]
   piperVoices: {
@@ -264,6 +266,9 @@ const electronAPI = {
 
   installCoqui: (accelerator: AcceleratorType = 'cpu'): Promise<{ success: boolean; error?: string; needsBuildTools?: boolean }> =>
     ipcRenderer.invoke('install-coqui', accelerator),
+
+  installBark: (accelerator: AcceleratorType = 'cpu'): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('install-bark', accelerator),
 
   checkBuildTools: (): Promise<boolean> =>
     ipcRenderer.invoke('check-build-tools'),

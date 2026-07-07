@@ -2,10 +2,10 @@ import type { DependencyStatus, AvailableAccelerators, AcceleratorConfig, Accele
 
 // ================== TTS PROVIDERS ==================
 
-export type TTSProvider = 'rhvoice' | 'piper' | 'silero' | 'coqui' | 'elevenlabs'
+export type TTSProvider = 'rhvoice' | 'piper' | 'silero' | 'coqui' | 'bark' | 'elevenlabs'
 
 // Offline-совместимые провайдеры (не требуют интернет)
-export const OFFLINE_PROVIDERS: readonly TTSProvider[] = ['rhvoice', 'piper', 'silero', 'coqui']
+export const OFFLINE_PROVIDERS: readonly TTSProvider[] = ['rhvoice', 'piper', 'silero', 'coqui', 'bark']
 // Online-only провайдеры
 export const ONLINE_ONLY_PROVIDERS: readonly TTSProvider[] = ['elevenlabs']
 
@@ -30,7 +30,7 @@ export interface BaseError {
 
 export interface SetupError extends BaseError {
   type: 'installation_error' | 'network_error' | 'disk_error' | 'permission_error'
-  component: 'ffmpeg' | 'python' | 'silero' | 'coqui' | 'piper' | 'rhvoice'
+  component: 'ffmpeg' | 'python' | 'silero' | 'coqui' | 'bark' | 'piper' | 'rhvoice'
 }
 
 export interface ConversionError extends BaseError {

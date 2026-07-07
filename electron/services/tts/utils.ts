@@ -13,7 +13,7 @@ export function getResourcesPath(): string {
 }
 
 // Get active accelerator setting for an engine
-function getActiveAccelerator(engine: 'silero' | 'coqui'): AcceleratorType {
+function getActiveAccelerator(engine: 'silero' | 'coqui' | 'bark'): AcceleratorType {
   try {
     const settingsPath = path.join(getResourcesPath(), 'accelerator-settings.json')
     if (existsSync(settingsPath)) {
@@ -65,6 +65,25 @@ export function getCoquiScript(): string {
   const resourcesPath = getResourcesPath()
   const activeAccelerator = getActiveAccelerator('coqui')
   return path.join(resourcesPath, `coqui-${activeAccelerator}`, 'generate.py')
+}
+
+// Get path to Python executable for Bark
+// Uses accelerator-specific Python (bark-cpu/python, bark-cuda/python, bark-directml/python)
+export function getBarkPythonExecutable(): string {
+  const resourcesPath = getResourcesPath()
+  const activeAccelerator = getActiveAccelerator('bark')
+  const barkPath = path.join(resourcesPath, `bark-${activeAccelerator}`)
+  return path.join(barkPath, 'python', 'python.exe')
+}
+
+export function getBarkScript(): string {
+  const resourcesPath = getResourcesPath()
+  const activeAccelerator = getActiveAccelerator('bark')
+  return path.join(resourcesPath, `bark-${activeAccelerator}`, 'generate.py')
+}
+
+export function getBarkAccelerator(): AcceleratorType {
+  return getActiveAccelerator('bark')
 }
 
 // Get path to ffmpeg executable

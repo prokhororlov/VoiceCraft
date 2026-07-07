@@ -24,7 +24,7 @@ interface VoiceInfo {
   shortName: string
   gender: 'Male' | 'Female'
   locale: string
-  provider: 'system' | 'piper' | 'silero' | 'elevenlabs' | 'coqui' | 'rhvoice'
+  provider: 'system' | 'piper' | 'silero' | 'elevenlabs' | 'coqui' | 'bark' | 'rhvoice'
   modelPath?: string
   voiceId?: string
   isInstalled?: boolean
@@ -63,6 +63,8 @@ interface DependencyStatus {
   coqui: boolean
   coquiAvailable: boolean
   coquiBuildToolsAvailable: boolean
+  bark: boolean
+  barkAvailable: boolean
   rhvoiceCore: boolean
   rhvoiceVoices: string[]
   piperVoices: {
@@ -179,6 +181,7 @@ interface ElectronAPI {
   getPythonInfo: () => Promise<{ available: boolean; path: string | null; isEmbedded: boolean; version: string | null }>
   installSilero: (accelerator?: AcceleratorType) => Promise<{ success: boolean; error?: string }>
   installCoqui: (accelerator?: AcceleratorType) => Promise<{ success: boolean; error?: string; needsBuildTools?: boolean }>
+  installBark: (accelerator?: AcceleratorType) => Promise<{ success: boolean; error?: string }>
   checkBuildTools: () => Promise<boolean>
   installBuildTools: () => Promise<{ success: boolean; error?: string; requiresRestart?: boolean }>
   installPiper: () => Promise<{ success: boolean; error?: string }>

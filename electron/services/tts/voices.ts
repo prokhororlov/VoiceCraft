@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { VoiceInfo, TTSProvider } from './types'
 import { getPiperResourcesPath } from './utils'
-import { checkSileroInstalled, checkCoquiInstalled, getInstalledRHVoices } from '../setup'
+import { checkSileroInstalled, checkCoquiInstalled, checkBarkInstalled, getInstalledRHVoices } from '../setup'
 
 // RHVoice configurations (Windows SAPI)
 export const RHVOICE_VOICES: Record<string, VoiceInfo[]> = {
@@ -374,6 +374,25 @@ export const COQUI_VOICES: Record<string, VoiceInfo[]> = {
   ]
 }
 
+function createBarkVoice(language: string, index: number): VoiceInfo {
+  const isRussian = language === 'ru-RU'
+  const gender = (index % 2 === 0 ? 'Male' : 'Female') as 'Male' | 'Female'
+  const presetLang = isRussian ? 'ru' : 'en'
+  return {
+    name: `Bark ${isRussian ? 'Russian' : 'English'} Speaker ${index}`,
+    shortName: `bark-${presetLang}-${index}`,
+    gender,
+    locale: language,
+    provider: 'bark',
+    modelPath: `v2/${presetLang}_speaker_${index}`
+  }
+}
+
+export const BARK_VOICES: Record<string, VoiceInfo[]> = {
+  'ru-RU': Array.from({ length: 10 }, (_, index) => createBarkVoice('ru-RU', index)),
+  'en': Array.from({ length: 10 }, (_, index) => createBarkVoice('en', index))
+}
+
 // Check if Piper voice model file exists
 export function isPiperVoiceInstalled(modelPath: string): boolean {
   const resourcesPath = getPiperResourcesPath()
@@ -416,6 +435,11 @@ export async function getVoicesForLanguage(language: string, provider?: TTSProvi
   // Coqui XTTS-v2 requires Python environment to be set up
   if ((!provider || provider === 'coqui') && checkCoquiInstalled()) {
     allVoices = allVoices.concat(COQUI_VOICES[language] || [])
+  }
+
+  // Bark Small requires Python environment to be set up
+  if ((!provider || provider === 'bark') && checkBarkInstalled()) {
+    allVoices = allVoices.concat(BARK_VOICES[language] || [])
   }
 
   if (allVoices.length === 0) {

@@ -1,5 +1,5 @@
 import { TTSProvider } from './types'
-import { RHVOICE_VOICES, PIPER_VOICES, SILERO_VOICES, ELEVENLABS_VOICES, COQUI_VOICES } from './voices'
+import { RHVOICE_VOICES, PIPER_VOICES, SILERO_VOICES, ELEVENLABS_VOICES, COQUI_VOICES, BARK_VOICES } from './voices'
 
 // ElevenLabs API key storage
 let elevenLabsApiKey: string | null = null
@@ -25,6 +25,7 @@ export function getAvailableProviders(): Array<{ id: TTSProvider; name: string; 
     { id: 'piper', name: 'Piper', requiresSetup: true },
     { id: 'silero', name: 'Silero', requiresSetup: true },
     { id: 'coqui', name: 'Coqui', requiresSetup: true },
+    { id: 'bark', name: 'Bark Small', requiresSetup: true },
     { id: 'elevenlabs', name: 'ElevenLabs', requiresSetup: false }
   ]
 }
@@ -41,6 +42,8 @@ export function isProviderAvailableForLanguage(provider: TTSProvider, language: 
       return ELEVENLABS_VOICES[language] !== undefined
     case 'coqui':
       return COQUI_VOICES[language] !== undefined
+    case 'bark':
+      return BARK_VOICES[language] !== undefined
     default:
       return false
   }

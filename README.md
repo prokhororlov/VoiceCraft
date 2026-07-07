@@ -6,7 +6,7 @@ Convert e-books (FB2, EPUB, TXT) to MP3 audiobooks using various Text-to-Speech 
 
 ## Features
 
-- **Five TTS providers** - RHVoice, Piper, Silero, Coqui XTTS-v2 and ElevenLabs
+- **Six TTS providers** - RHVoice, Piper, Silero, Coqui XTTS-v2, Bark Small and ElevenLabs
 - **60+ voices** - Multiple voices in Russian and English
 - **Format support** - FB2, EPUB, TXT
 - **Speed control** - from 0.5x to 2.0x
@@ -75,7 +75,20 @@ State-of-the-art multilingual model with 14 built-in speaker voices. Produces th
 
 Supports 17 languages including Russian, English, Spanish, French, German, Italian, Portuguese, Polish, Turkish, Dutch, Czech, Arabic, Chinese, Japanese, Hungarian, Korean, and Hindi.
 
-### 5. ElevenLabs (Cloud API)
+### 5. Bark Small
+**Speed: Slow | Quality: Experimental | Offline**
+
+Suno Bark Small is a generative text-to-audio model for expressive short-form speech. It supports Russian and English speaker presets and can produce pauses, laughter, sighs and other non-verbal sounds. Bark is best treated as experimental for audiobooks because it can deviate from the exact source text more than conventional TTS models.
+
+#### Russian voices:
+- 10 Bark Russian speaker presets
+
+#### English voices:
+- 10 Bark English speaker presets
+
+Model downloads during Bark setup. GPU acceleration is supported through CUDA or DirectML when available, with CPU fallback for DirectML generation issues.
+
+### 6. ElevenLabs (Cloud API)
 **Speed: Fast | Quality: Premium | Online**
 
 Premium cloud-based TTS with cutting-edge AI voice synthesis. Offers studio-quality output with remarkable naturalness.
@@ -134,6 +147,7 @@ This will install:
 - FFmpeg
 - Silero TTS
 - Coqui XTTS-v2
+- Bark Small
 
 4. **Download voice models**
 
@@ -172,6 +186,9 @@ npm run setup:silero
 
 #### For Coqui XTTS-v2:
 Model downloads automatically on first use (~2 GB). Requires Python 3.9+ and GPU recommended for faster generation.
+
+#### For Bark Small:
+Model downloads during setup. Requires Python 3.9+ and GPU recommended for faster generation. Use shorter previews first because Bark is generative and may not follow long text exactly.
 
 #### For ElevenLabs:
 Add your API key to `.env` file:
@@ -234,6 +251,7 @@ voicecraft/
 | Piper       | Fast     | Good       | ~50 MB       | CPU      | Balanced option           |
 | Silero      | Medium   | Excellent  | ~100-200 MB  | CPU/GPU  | Natural Russian voices    |
 | Coqui       | Slow     | Premium    | ~2 GB        | CPU/GPU  | Best offline quality      |
+| Bark Small  | Slow     | Experimental | ~1-2 GB     | CPU/GPU  | Expressive short passages |
 | ElevenLabs  | Fast     | Premium    | Cloud        | API      | Best overall quality      |
 
 ### GPU Acceleration
@@ -246,11 +264,11 @@ Silero and Coqui support hardware acceleration for faster speech generation:
 | **DirectML** | AMD Radeon on Windows | ~250 MB | 2-5x |
 | **CPU**     | Any | ~150-200 MB | Baseline |
 
-CUDA is available for Silero and Coqui. DirectML is available for Coqui XTTS-v2.
+CUDA is available for Silero, Coqui and Bark. DirectML is available for Coqui XTTS-v2 and Bark Small.
 
 #### Enabling GPU Acceleration
 
-1. **During initial setup**: When installing Silero or Coqui, select your preferred accelerator (CUDA, DirectML, or CPU). DirectML appears for Coqui when an AMD Radeon GPU is detected.
+1. **During initial setup**: When installing Silero, Coqui or Bark, select your preferred accelerator (CUDA, DirectML, or CPU). DirectML appears for Coqui and Bark when an AMD Radeon GPU is detected.
 
 2. **Change accelerator later**: Go to Settings → TTS Setup → click "Reinstall" button next to Silero or Coqui to change the accelerator
 
@@ -266,6 +284,7 @@ CUDA is available for Silero and Coqui. DirectML is available for Coqui XTTS-v2.
 - Latest AMD Adrenalin drivers installed
 - DirectML dependencies are installed automatically
 - Coqui voice cloning runs on CPU for cloned-voice requests when DirectML is selected, because XTTS voice cloning uses operations that DirectML does not support
+- Bark DirectML support is experimental; if a DirectML generation operation fails, the Bark script retries on CPU
 
 #### Auto-Detection
 
@@ -305,6 +324,12 @@ The application automatically detects available GPUs:
 - Requires Python 3.9+
 - Check that `tts_resources/coqui/venv` exists
 
+### Bark Small issues
+- Bark is generative and may deviate from long source text
+- Use short previews to evaluate a speaker preset before converting a book
+- DirectML support is experimental; CPU fallback can be slower on AMD
+- Check that `tts_resources/bark-*/python/python.exe` and `generate.py` exist
+
 ### ElevenLabs not working
 - Check that API key is set in `.env` file
 - Verify API key is valid at elevenlabs.io
@@ -324,5 +349,6 @@ MIT
 - [Piper](https://github.com/rhasspy/piper) - Fast ONNX TTS models
 - [Silero](https://github.com/snakers4/silero-models) - Natural PyTorch voices
 - [Coqui TTS](https://github.com/coqui-ai/TTS) - State-of-the-art XTTS-v2 model
+- [Suno Bark](https://github.com/suno-ai/bark) - Generative text-to-audio model
 - [ElevenLabs](https://elevenlabs.io/) - Premium cloud TTS
 - [FFmpeg](https://ffmpeg.org/) - Audio conversion

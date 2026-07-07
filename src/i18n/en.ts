@@ -112,6 +112,17 @@ export const en: Translations = {
       slowGeneration: 'slow generation',
       multilingualNeural: 'Multilingual neural model',
     },
+    bark: {
+      name: 'Bark Small',
+      description: 'Experimental generative text-to-audio model by Suno. Supports Russian and English speaker presets, expressive speech, pauses, laughter and other non-verbal sounds. Best for short expressive passages; long-form books may need review because Bark can deviate from the exact text.',
+      setupRequired: 'Bark Small Setup Required',
+      waitMinutes: 'Please wait, the first install downloads the model and may take several minutes...',
+      forBarkWork: 'For Bark Small to work, the following will be installed:',
+      transformersLibrary: 'Transformers, Accelerate and SciPy libraries',
+      barkModel: 'Suno Bark Small model',
+      initialDownload: 'Initial download',
+      gpuNote: 'DirectML support is experimental. If an AMD operation fails, generation falls back to CPU.',
+    },
     piper: {
       name: 'Piper',
       description: 'Fast neural TTS on ONNX Runtime by Rhasspy. Generates speech 10-50x faster than real-time. Compact voice models (15-100 MB), 30+ languages with multiple quality levels. Used in Home Assistant, NVDA and other projects. Fully offline.',

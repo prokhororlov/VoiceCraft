@@ -112,6 +112,17 @@ export interface Translations {
       slowGeneration: string;
       multilingualNeural: string;
     };
+    bark: {
+      name: string;
+      description: string;
+      setupRequired: string;
+      waitMinutes: string;
+      forBarkWork: string;
+      transformersLibrary: string;
+      barkModel: string;
+      initialDownload: string;
+      gpuNote: string;
+    };
     piper: {
       name: string;
       description: string;

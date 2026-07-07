@@ -24,6 +24,8 @@ export function ProviderSelector({
         return t.providers.silero.description
       case 'coqui':
         return t.providers.coqui.description
+      case 'bark':
+        return t.providers.bark.description
       case 'piper':
         return t.providers.piper.description
       case 'rhvoice':
@@ -36,7 +38,7 @@ export function ProviderSelector({
   }
 
   const getProviderAvailability = (providerId: string) => {
-    if (providerId === 'silero' || providerId === 'coqui') {
+    if (providerId === 'silero' || providerId === 'coqui' || providerId === 'bark') {
       return true
     }
     return voices.some((v) => v.provider === providerId)
