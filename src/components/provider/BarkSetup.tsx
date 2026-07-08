@@ -169,7 +169,7 @@ export function BarkSetup({
 
           <div className="flex items-center justify-between">
             <span className="text-xs text-muted-foreground">
-              {t.providers.bark.initialDownload}: ~{selectedAccelerator === 'cuda' ? '3.8 GB' : selectedAccelerator === 'directml' ? '1.8 GB' : '1.7 GB'}
+              {t.providers.bark.initialDownload}: ~{selectedAccelerator === 'cuda' ? '6.8 GB' : '4.8 GB'}
             </span>
             <Button
               variant="default"

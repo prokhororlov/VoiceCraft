@@ -157,6 +157,10 @@ export function registerSetupHandlers() {
     return getCurrentAccelerator('coqui')
   })
 
+  ipcMain.handle('get-current-bark-accelerator', async () => {
+    return getCurrentAccelerator('bark')
+  })
+
   ipcMain.handle('reinstall-silero-with-accelerator', async (event, accelerator: AcceleratorType) => {
     try {
       // Stop TTS server first

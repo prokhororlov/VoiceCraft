@@ -689,6 +689,32 @@ from transformers import AutoProcessor, BarkModel
 
 MODEL_ID = "suno/bark-small"
 SAMPLE_RATE = 24000
+_ORIGINAL_HSTACK = torch.hstack
+BARK_GENERATION_KWARGS = {
+    "semantic_temperature": 0.55,
+    "semantic_top_k": 40,
+    "semantic_top_p": 0.95,
+    "coarse_temperature": 0.55,
+    "coarse_top_k": 40,
+    "coarse_top_p": 0.95,
+}
+
+
+def patch_directml_hstack():
+    """Avoid torch-directml concat failure for empty Bark history tensors."""
+    def safe_hstack(tensors, *args, **kwargs):
+        tensors = list(tensors)
+        non_empty = [
+            tensor for tensor in tensors
+            if not (hasattr(tensor, "numel") and tensor.numel() == 0)
+        ]
+        if len(non_empty) == 1:
+            return non_empty[0]
+        if len(non_empty) > 1:
+            return _ORIGINAL_HSTACK(non_empty, *args, **kwargs)
+        return _ORIGINAL_HSTACK(tensors, *args, **kwargs)
+
+    torch.hstack = safe_hstack
 
 
 def normalize_language(language):
@@ -745,7 +771,19 @@ def load_model(cache_dir, device, backend):
         model = model.to(device)
     elif backend == "directml":
         try:
+            patch_directml_hstack()
             model = model.to(device)
+            model.codec_model.to("cpu")
+            original_codec_decode = model.codec_decode
+
+            def codec_decode_cpu(fine_output, output_lengths=None):
+                if hasattr(fine_output, "to"):
+                    fine_output = fine_output.to("cpu")
+                if output_lengths is not None and hasattr(output_lengths, "to"):
+                    output_lengths = output_lengths.to("cpu")
+                return original_codec_decode(fine_output, output_lengths)
+
+            model.codec_decode = codec_decode_cpu
         except Exception as exc:
             print(f"Could not move Bark model to DirectML, using CPU: {exc}", file=sys.stderr)
             device = torch.device("cpu")
@@ -755,13 +793,34 @@ def load_model(cache_dir, device, backend):
 
 
 def move_to_device(value, device):
-    if hasattr(value, "to"):
-        return value.to(device)
     if isinstance(value, dict):
         return {key: move_to_device(item, device) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
         return type(value)(move_to_device(item, device) for item in value)
+    if hasattr(value, "to"):
+        return value.to(device)
     return value
+
+
+def audio_quality_issue(audio_array):
+    if audio_array is None or len(audio_array) < SAMPLE_RATE // 4:
+        return "too short"
+    if not np.isfinite(audio_array).all():
+        return "contains invalid samples"
+
+    peak = float(np.max(np.abs(audio_array)))
+    rms = float(np.sqrt(np.mean(np.square(audio_array))))
+    clipping_ratio = float(np.mean(np.abs(audio_array) > 0.98))
+    signs = np.signbit(audio_array)
+    zero_crossing_rate = float(np.mean(signs[1:] != signs[:-1])) if len(signs) > 1 else 0.0
+
+    if peak < 0.01 or rms < 0.002:
+        return f"near silence (peak={peak:.4f}, rms={rms:.4f})"
+    if peak > 1.5 or clipping_ratio > 0.08:
+        return f"clipped/noisy (peak={peak:.2f}, clipping={clipping_ratio:.2%})"
+    if zero_crossing_rate > 0.35:
+        return f"high-frequency artifact (zcr={zero_crossing_rate:.2f})"
+    return None
 
 
 def generate(text, output, voice_preset, language, accelerator):
@@ -779,23 +838,27 @@ def generate(text, output, voice_preset, language, accelerator):
     inputs = processor(text, voice_preset=voice_preset, return_tensors="pt")
     inputs = move_to_device(inputs, device)
 
-    try:
-        with torch.no_grad():
-            audio = model.generate(**inputs, do_sample=True)
-    except Exception as exc:
-        if backend == "directml":
-            print(f"DirectML generation failed, retrying on CPU: {exc}", file=sys.stderr)
-            device = torch.device("cpu")
-            model = model.to(device)
-            inputs = move_to_device(inputs, device)
+    last_issue = None
+    for attempt in range(3):
+        try:
             with torch.no_grad():
-                audio = model.generate(**inputs, do_sample=True)
-        else:
+                audio = model.generate(**inputs, do_sample=True, **BARK_GENERATION_KWARGS)
+        except Exception as exc:
+            if backend == "directml":
+                raise RuntimeError(f"DirectML Bark generation failed: {exc}") from exc
             raise
 
-    audio_array = audio.detach().cpu().numpy().squeeze()
-    if audio_array.dtype != np.float32:
-        audio_array = audio_array.astype(np.float32)
+        audio_array = audio.detach().cpu().numpy().squeeze()
+        if audio_array.dtype != np.float32:
+            audio_array = audio_array.astype(np.float32)
+        issue = audio_quality_issue(audio_array)
+        if issue is None:
+            break
+        last_issue = issue
+        print(f"Bark generated suspicious audio ({issue}); retrying ({attempt + 1}/3)", file=sys.stderr)
+    else:
+        print(f"Bark kept suspicious audio after retries: {last_issue}", file=sys.stderr)
+
     audio_array = np.clip(audio_array, -1.0, 1.0)
 
     output_path = Path(output)
@@ -824,15 +887,19 @@ if __name__ == "__main__":
 `
 }
 
-// TTS Server script content - Universal server for Silero and Coqui
+// TTS Server script content - Universal server for Silero, Coqui and Bark
 export function getTTSServerScriptContent(): string {
   return `#!/usr/bin/env python3
-"""Universal TTS Server for Silero and Coqui XTTS"""
+"""Universal TTS Server for Silero, Coqui XTTS and Bark Small"""
 
-import argparse, gc, io, os, sys, re, threading, time
+import argparse, gc, io, os, sys, re, threading, time, warnings
 from pathlib import Path
 
 os.environ["COQUI_TOS_AGREED"] = "1"
+os.environ["TRANSFORMERS_VERBOSITY"] = "error"
+warnings.filterwarnings("ignore", message="The attention mask.*")
+warnings.filterwarnings("ignore", message="Setting .*pad_token_id.*")
+warnings.filterwarnings("ignore", message="To copy construct from a tensor.*")
 
 try:
     from flask import Flask, request, jsonify, Response
@@ -852,11 +919,38 @@ def _patched_load(*a, **kw):
     return _orig_load(*a, **kw)
 torch.load = _patched_load
 torch.inference_mode = torch.no_grad
+_original_hstack = torch.hstack
+BARK_GENERATION_KWARGS = {
+    "semantic_temperature": 0.55,
+    "semantic_top_k": 40,
+    "semantic_top_p": 0.95,
+    "coarse_temperature": 0.55,
+    "coarse_top_k": 40,
+    "coarse_top_p": 0.95,
+}
+
+def patch_directml_hstack():
+    """Avoid torch-directml concat failure for empty Bark history tensors."""
+    def safe_hstack(tensors, *args, **kwargs):
+        tensors = list(tensors)
+        non_empty = [
+            tensor for tensor in tensors
+            if not (hasattr(tensor, "numel") and tensor.numel() == 0)
+        ]
+        if len(non_empty) == 1:
+            return non_empty[0]
+        if len(non_empty) > 1:
+            return _original_hstack(non_empty, *args, **kwargs)
+        return _original_hstack(tensors, *args, **kwargs)
+
+    torch.hstack = safe_hstack
 
 app = Flask(__name__)
-models = {"silero": {"ru": None, "en": None}, "coqui": None}
+models = {"silero": {"ru": None, "en": None}, "coqui": None, "bark": None}
 coqui_lock = threading.Lock()
+bark_lock = threading.Lock()
 ruaccent_model = None
+engine_path = None
 
 def load_ruaccent():
     """Lazy load ruaccent model for Russian stress placement."""
@@ -959,13 +1053,33 @@ def change_speed(audio, factor):
 
 def audio_to_wav_bytes(audio, sr=48000):
     if isinstance(audio, torch.Tensor):
-        audio = audio.numpy()
+        audio = audio.detach().cpu().numpy()
     if audio.ndim > 1:
         audio = audio.squeeze()
     buf = io.BytesIO()
     wavfile.write(buf, sr, (audio * 32767).astype(np.int16))
     buf.seek(0)
     return buf.read()
+
+def audio_quality_issue(audio_array, sr=24000):
+    if audio_array is None or len(audio_array) < sr // 4:
+        return "too short"
+    if not np.isfinite(audio_array).all():
+        return "contains invalid samples"
+
+    peak = float(np.max(np.abs(audio_array)))
+    rms = float(np.sqrt(np.mean(np.square(audio_array))))
+    clipping_ratio = float(np.mean(np.abs(audio_array) > 0.98))
+    signs = np.signbit(audio_array)
+    zero_crossing_rate = float(np.mean(signs[1:] != signs[:-1])) if len(signs) > 1 else 0.0
+
+    if peak < 0.01 or rms < 0.002:
+        return f"near silence (peak={peak:.4f}, rms={rms:.4f})"
+    if peak > 1.5 or clipping_ratio > 0.08:
+        return f"clipped/noisy (peak={peak:.2f}, clipping={clipping_ratio:.2%})"
+    if zero_crossing_rate > 0.35:
+        return f"high-frequency artifact (zcr={zero_crossing_rate:.2f})"
+    return None
 
 def load_silero_model(lang):
     global models
@@ -1048,11 +1162,190 @@ def generate_coqui(text, speaker, lang, speaker_wav=None):
             if os.path.exists(tmp):
                 os.unlink(tmp)
 
+def load_bark_model():
+    global models, device, backend, device_label
+    print("Loading Bark Small...", file=sys.stderr)
+    from transformers import AutoProcessor, BarkModel
+    from transformers.utils import logging as hf_logging
+    hf_logging.set_verbosity_error()
+
+    cache_dir = Path(engine_path) / "models" if engine_path else Path(__file__).resolve().parent / "bark" / "models"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    processor = AutoProcessor.from_pretrained("suno/bark-small", cache_dir=str(cache_dir))
+    model = BarkModel.from_pretrained("suno/bark-small", cache_dir=str(cache_dir))
+    model.eval()
+
+    bark_device = torch.device(device) if backend in ["cuda", "cpu"] else device
+    bark_backend = backend
+    codec_backend = bark_backend
+    acoustic_backend = bark_backend
+    if backend in ["cuda", "directml"]:
+        try:
+            if backend == "directml":
+                patch_directml_hstack()
+            if backend == "directml":
+                model.semantic.to(bark_device)
+                model.coarse_acoustics.to("cpu")
+                model.fine_acoustics.to("cpu")
+                model.codec_model.to("cpu")
+                acoustic_backend = "cpu"
+                codec_backend = "cpu"
+            else:
+                model = model.to(bark_device)
+        except Exception as e:
+            print(f"Could not move Bark model to {backend}, using CPU: {e}", file=sys.stderr)
+            bark_device = torch.device("cpu")
+            bark_backend = "cpu"
+            acoustic_backend = "cpu"
+            codec_backend = "cpu"
+
+    models["bark"] = {
+        "processor": processor,
+        "model": model,
+        "device": bark_device,
+        "backend": bark_backend,
+        "acoustic_backend": acoustic_backend,
+        "codec_backend": codec_backend
+    }
+
+    if bark_backend == "directml":
+        try:
+            inputs = processor("ok.", voice_preset="v2/en_speaker_0", return_tensors="pt")
+            inputs = move_to_device(inputs, bark_device)
+            with torch.no_grad():
+                if acoustic_backend == "cpu":
+                    _ = generate_bark_directml_hybrid(model, inputs)
+                else:
+                    _ = model.generate(**inputs, do_sample=True, **BARK_GENERATION_KWARGS)
+            print("Bark DirectML warm-up completed", file=sys.stderr)
+        except Exception as e:
+            raise RuntimeError(f"Bark DirectML warm-up failed: {e}") from e
+
+    print(f"Bark Small loaded on {bark_backend} (codec: {codec_backend}). Memory: {get_memory_gb():.2f} GB", file=sys.stderr)
+
+def move_to_device(value, target_device):
+    if isinstance(value, dict):
+        return {key: move_to_device(item, target_device) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return type(value)(move_to_device(item, target_device) for item in value)
+    if hasattr(value, "to"):
+        return value.to(target_device)
+    return value
+
+def prepare_text_for_bark(text):
+    return " ".join(str(text).split()).strip()
+
+def generate_bark_directml_hybrid(model, inputs):
+    from transformers.models.bark.generation_configuration_bark import (
+        BarkSemanticGenerationConfig,
+        BarkCoarseGenerationConfig,
+        BarkFineGenerationConfig,
+    )
+
+    semantic_config = BarkSemanticGenerationConfig(**model.generation_config.semantic_config)
+    coarse_config = BarkCoarseGenerationConfig(**model.generation_config.coarse_acoustics_config)
+    fine_config = BarkFineGenerationConfig(**model.generation_config.fine_acoustics_config)
+
+    input_ids = inputs["input_ids"]
+    attention_mask = inputs.get("attention_mask")
+    history_prompt = inputs.get("history_prompt")
+    history_cpu = move_to_device(history_prompt, "cpu") if history_prompt is not None else None
+
+    semantic_output = model.semantic.generate(
+        input_ids,
+        history_prompt=history_prompt,
+        semantic_generation_config=semantic_config,
+        attention_mask=attention_mask,
+        do_sample=True,
+        temperature=BARK_GENERATION_KWARGS["semantic_temperature"],
+        top_k=BARK_GENERATION_KWARGS["semantic_top_k"],
+        top_p=BARK_GENERATION_KWARGS["semantic_top_p"],
+    )
+
+    semantic_output = semantic_output.to("cpu")
+    coarse_output = model.coarse_acoustics.generate(
+        semantic_output,
+        history_prompt=history_cpu,
+        semantic_generation_config=semantic_config,
+        coarse_generation_config=coarse_config,
+        codebook_size=model.generation_config.codebook_size,
+        do_sample=True,
+        temperature=BARK_GENERATION_KWARGS["coarse_temperature"],
+        top_k=BARK_GENERATION_KWARGS["coarse_top_k"],
+        top_p=BARK_GENERATION_KWARGS["coarse_top_p"],
+    )
+
+    fine_output = model.fine_acoustics.generate(
+        coarse_output,
+        history_prompt=history_cpu,
+        semantic_generation_config=semantic_config,
+        coarse_generation_config=coarse_config,
+        fine_generation_config=fine_config,
+        codebook_size=model.generation_config.codebook_size,
+    )
+
+    return model.codec_decode(fine_output, None)
+
+def generate_bark(text, voice_preset, lang):
+    text = prepare_text_for_bark(text)
+    if not text:
+        raise ValueError("Text is empty")
+    with bark_lock:
+        state = models["bark"]
+        if state is None:
+            raise RuntimeError("Bark Small model is not loaded. Please load it first.")
+        processor = state["processor"]
+        model = state["model"]
+        target_device = state["device"]
+        bark_backend = state["backend"]
+        acoustic_backend = state.get("acoustic_backend")
+
+        inputs = processor(text, voice_preset=voice_preset, return_tensors="pt")
+        inputs = move_to_device(inputs, target_device)
+
+        last_issue = None
+        for attempt in range(3):
+            try:
+                with torch.no_grad():
+                    if bark_backend == "directml" and acoustic_backend == "cpu":
+                        audio = generate_bark_directml_hybrid(model, inputs)
+                    else:
+                        audio = model.generate(**inputs, do_sample=True, **BARK_GENERATION_KWARGS)
+            except Exception as exc:
+                if bark_backend == "directml":
+                    raise RuntimeError(f"DirectML Bark generation failed: {exc}") from exc
+                raise
+
+            audio_array = audio.detach().cpu().numpy().squeeze().astype(np.float32)
+            issue = audio_quality_issue(audio_array, 24000)
+            if issue is None:
+                break
+            last_issue = issue
+            print(f"Bark generated suspicious audio ({issue}); retrying ({attempt + 1}/3)", file=sys.stderr)
+        else:
+            print(f"Bark kept suspicious audio after retries: {last_issue}", file=sys.stderr)
+
+        audio_array = np.clip(audio_array, -1.0, 1.0)
+        return audio_to_wav_bytes(audio_array, 24000)
+
+def bark_status():
+    state = models["bark"]
+    if state is None:
+        return {"loaded": False, "backend": None}
+    return {
+        "loaded": True,
+        "backend": state.get("backend", "unknown"),
+        "acoustic_backend": state.get("acoustic_backend"),
+        "codec_backend": state.get("codec_backend")
+    }
+
 @app.route("/status", methods=["GET"])
 def status():
     return jsonify({
         "silero": {"ru_loaded": models["silero"]["ru"] is not None, "en_loaded": models["silero"]["en"] is not None},
         "coqui": {"loaded": models["coqui"] is not None},
+        "bark": bark_status(),
         "memory_gb": round(get_memory_gb(), 2),
         "device": device_label,
         "backend": backend,
@@ -1075,6 +1368,8 @@ def load_model():
             load_silero_model(lang)
         elif engine == "coqui" and models["coqui"] is None:
             load_coqui_model()
+        elif engine == "bark" and models["bark"] is None:
+            load_bark_model()
         return jsonify({"success": True, "memory_gb": round(get_memory_gb(), 2)})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1090,9 +1385,12 @@ def unload_model():
             models["silero"] = {"ru": None, "en": None}
     elif engine == "coqui":
         models["coqui"] = None
+    elif engine == "bark":
+        models["bark"] = None
     elif engine == "all":
         models["silero"] = {"ru": None, "en": None}
         models["coqui"] = None
+        models["bark"] = None
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
@@ -1111,10 +1409,19 @@ def generate():
         return jsonify({"error": "Missing speaker"}), 400
     if engine == "coqui" and not (speaker or speaker_wav):
         return jsonify({"error": "Missing params"}), 400
+    if engine == "bark" and not speaker:
+        return jsonify({"error": "Missing voice preset"}), 400
     try:
         # Apply ruaccent stress marks only for Silero (not for Coqui)
         processed_text = apply_stress_marks(text, lang) if (engine == "silero" and use_ruaccent) else text
-        audio = generate_silero(processed_text, speaker, lang, rate) if engine == "silero" else generate_coqui(text, speaker, lang, speaker_wav)
+        if engine == "silero":
+            audio = generate_silero(processed_text, speaker, lang, rate)
+        elif engine == "coqui":
+            audio = generate_coqui(text, speaker, lang, speaker_wav)
+        elif engine == "bark":
+            audio = generate_bark(text, speaker, lang)
+        else:
+            return jsonify({"error": f"Unknown engine: {engine}"}), 400
         return Response(audio, mimetype="audio/wav")
     except Exception as e:
         import traceback
@@ -1125,7 +1432,7 @@ def generate():
 @app.route("/shutdown", methods=["POST"])
 def shutdown():
     global models
-    models = {"silero": {"ru": None, "en": None}, "coqui": None}
+    models = {"silero": {"ru": None, "en": None}, "coqui": None, "bark": None}
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
@@ -1140,8 +1447,12 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--port", type=int, default=5050)
     p.add_argument("--host", type=str, default="127.0.0.1")
+    p.add_argument("--runtime-engine", type=str, default="coqui")
+    p.add_argument("--engine-path", type=str, default="")
+    p.add_argument("--accelerator", type=str, default="auto")
     args = p.parse_args()
-    print(f"TTS Server on {args.host}:{args.port}, device={device_label}", file=sys.stderr)
+    engine_path = args.engine_path
+    print(f"TTS Server on {args.host}:{args.port}, runtime={args.runtime_engine}, device={device_label}", file=sys.stderr)
     app.run(host=args.host, port=args.port, threaded=True)
 `
 }

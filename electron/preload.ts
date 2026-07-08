@@ -214,10 +214,10 @@ const electronAPI = {
     }>
   }> => ipcRenderer.invoke('tts-server-status'),
 
-  ttsModelLoad: (engine: 'silero' | 'coqui', language?: string): Promise<{ success: boolean; memory_gb: number; error?: string }> =>
+  ttsModelLoad: (engine: 'silero' | 'coqui' | 'bark', language?: string): Promise<{ success: boolean; memory_gb: number; error?: string }> =>
     ipcRenderer.invoke('tts-model-load', engine, language),
 
-  ttsModelUnload: (engine: 'silero' | 'coqui' | 'all', language?: string): Promise<{ success: boolean; memory_gb: number }> =>
+  ttsModelUnload: (engine: 'silero' | 'coqui' | 'bark' | 'all', language?: string): Promise<{ success: boolean; memory_gb: number }> =>
     ipcRenderer.invoke('tts-model-unload', engine, language),
 
   ttsSetDevice: (device: string): Promise<{ success: boolean; error?: string }> =>
@@ -290,6 +290,9 @@ const electronAPI = {
 
   getCurrentCoquiAccelerator: (): Promise<AcceleratorConfig | null> =>
     ipcRenderer.invoke('get-current-coqui-accelerator'),
+
+  getCurrentBarkAccelerator: (): Promise<AcceleratorConfig | null> =>
+    ipcRenderer.invoke('get-current-bark-accelerator'),
 
   reinstallSileroWithAccelerator: (accelerator: AcceleratorType): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke('reinstall-silero-with-accelerator', accelerator),

@@ -20,7 +20,9 @@ import {
 import {
   getTTSServerStatus,
   generateViaServer,
-  generateViaServerForPreview
+  generateViaServerForPreview,
+  getCurrentPreviewRequest,
+  clearCurrentPreviewRequest
 } from './server'
 import {
   RHVOICE_VOICES,
@@ -68,6 +70,16 @@ export function abortPreview(): void {
       // Request may have already completed
     }
     currentPreviewRequest = null
+  }
+
+  const serverPreviewRequest = getCurrentPreviewRequest()
+  if (serverPreviewRequest) {
+    try {
+      serverPreviewRequest.destroy()
+    } catch {
+      // Request may have already completed
+    }
+    clearCurrentPreviewRequest()
   }
 }
 
@@ -796,6 +808,12 @@ async function generateSpeechWithBark(
   language: string,
   outputPath: string
 ): Promise<void> {
+  const serverStatus = await getTTSServerStatus()
+  if (serverStatus.running) {
+    await generateViaServer('bark', text, voicePreset, language, outputPath)
+    return
+  }
+
   const pythonExe = getBarkPythonExecutable()
   const barkScript = getBarkScript()
 
@@ -1105,6 +1123,12 @@ async function generateSpeechWithBarkForPreview(
   language: string,
   outputPath: string
 ): Promise<void> {
+  const serverStatus = await getTTSServerStatus()
+  if (serverStatus.running) {
+    await generateViaServerForPreview('bark', text, voicePreset, language, outputPath)
+    return
+  }
+
   const pythonExe = getBarkPythonExecutable()
   const barkScript = getBarkScript()
 
@@ -1949,39 +1973,24 @@ export async function previewVoice(
       return { success: false, error: 'Audio file was not created or is empty' }
     }
 
-    // Convert WAV to MP3 for browser playback
-    await convertWavToMp3(tempWavFile, tempMp3File)
-
-    // Check if aborted
-    if (previewAborted) {
-      return { success: false, error: 'Preview cancelled' }
-    }
-
-    console.log('MP3 exists:', fs.existsSync(tempMp3File), 'Size:', fs.existsSync(tempMp3File) ? fs.statSync(tempMp3File).size : 0)
-
-    // Clean up WAV file
-    try {
-      fs.unlinkSync(tempWavFile)
-    } catch {
-      // Ignore cleanup errors
-    }
-
-    if (!fs.existsSync(tempMp3File) || fs.statSync(tempMp3File).size === 0) {
-      return { success: false, error: 'Failed to convert audio to MP3' }
-    }
-
-    // Read MP3 file as base64
-    const audioBuffer = fs.readFileSync(tempMp3File)
+    // Browser playback does not require MP3 here. Returning WAV avoids an
+    // extra FFmpeg pass after neural generation, which is noticeable for Bark.
+    const audioBuffer = fs.readFileSync(tempWavFile)
     const audioBase64 = audioBuffer.toString('base64')
-    const audioData = `data:audio/mpeg;base64,${audioBase64}`
+    const audioData = `data:audio/wav;base64,${audioBase64}`
 
     console.log('Audio data length:', audioData.length)
 
-    // Clean up MP3 file
+    // Clean up preview files
     try {
-      fs.unlinkSync(tempMp3File)
+      fs.unlinkSync(tempWavFile)
+      if (fs.existsSync(tempMp3File)) fs.unlinkSync(tempMp3File)
     } catch {
       // Ignore cleanup errors
+    }
+
+    if (previewAborted) {
+      return { success: false, error: 'Preview cancelled' }
     }
 
     return { success: true, audioData }

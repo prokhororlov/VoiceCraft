@@ -152,6 +152,7 @@ function App() {
   const [availableAccelerators, setAvailableAccelerators] = useState<AcceleratorInfo | null>(null)
   const [sileroAccelerator, setSileroAccelerator] = useState<AcceleratorConfig | null>(null)
   const [coquiAccelerator, setCoquiAccelerator] = useState<AcceleratorConfig | null>(null)
+  const [barkAccelerator, setBarkAccelerator] = useState<AcceleratorConfig | null>(null)
   const [isReinstalling, setIsReinstalling] = useState<'silero' | 'coqui' | null>(null)
   const [reinstallProgress, setReinstallProgress] = useState<ReinstallProgress | null>(null)
   const [showReinstallConfirm, setShowReinstallConfirm] = useState<{ engine: 'silero' | 'coqui'; accelerator: 'cuda' | 'directml' } | null>(null)
@@ -275,6 +276,10 @@ function App() {
         if (deps.coqui) {
           const coquiAcc = await window.electronAPI.getCurrentCoquiAccelerator()
           setCoquiAccelerator(coquiAcc)
+        }
+        if (deps.bark) {
+          const barkAcc = await window.electronAPI.getCurrentBarkAccelerator()
+          setBarkAccelerator(barkAcc)
         }
       } catch (err) {
         console.error('Failed to check provider status:', err)
@@ -576,6 +581,7 @@ function App() {
 
         setPreviewAudio(audio)
         await audio.play()
+        await refreshServerStatus()
       } else {
         setError(result.error || 'Failed to generate preview')
         setIsPreviewing(false)
@@ -637,7 +643,7 @@ function App() {
     setEditingCustomVoice(null)
   }
 
-  const handleLoadModel = async (engine: 'silero' | 'coqui', language?: string) => {
+  const handleLoadModel = async (engine: 'silero' | 'coqui' | 'bark', language?: string) => {
     if (!window.electronAPI) return
     const loadKey = language ? `${engine}-${language}` : engine
     setIsLoadingModel(loadKey)
@@ -656,7 +662,7 @@ function App() {
     }
   }
 
-  const handleUnloadModel = async (engine: 'silero' | 'coqui' | 'all', language?: string) => {
+  const handleUnloadModel = async (engine: 'silero' | 'coqui' | 'bark' | 'all', language?: string) => {
     if (!window.electronAPI) return
     const loadKey = language ? `${engine}-${language}` : engine
     setIsLoadingModel(loadKey)
@@ -665,7 +671,7 @@ function App() {
       const status = await window.electronAPI.ttsServerStatus()
       updateDeviceState(status)
 
-      const hasLoadedModels = status.silero.ru_loaded || status.silero.en_loaded || status.coqui.loaded
+      const hasLoadedModels = status.silero.ru_loaded || status.silero.en_loaded || status.coqui.loaded || status.bark.loaded
       if (status.running && !hasLoadedModels) {
         await window.electronAPI.ttsServerStop()
         setTtsServerStatus(prev => prev ? { ...prev, running: false } : null)
@@ -813,6 +819,8 @@ function App() {
       const result = await window.electronAPI.installBark(barkInstallAccelerator)
       if (result.success) {
         setBarkInstalled(true)
+        const acc = await window.electronAPI.getCurrentBarkAccelerator()
+        setBarkAccelerator(acc)
       } else {
         setError(result.error || 'Bark installation failed')
       }
@@ -993,6 +1001,9 @@ function App() {
     if (selectedProvider === 'coqui') {
       return ttsServerStatus?.coqui.loaded === true
     }
+    if (selectedProvider === 'bark') {
+      return ttsServerStatus?.bark.loaded === true
+    }
     return true
   })()
 
@@ -1136,11 +1147,12 @@ function App() {
 
                 {/* TTS Model Panel */}
                 {((selectedProvider === 'silero' && sileroInstalled) ||
-                  (selectedProvider === 'coqui' && coquiInstalled)) && (
+                  (selectedProvider === 'coqui' && coquiInstalled) ||
+                  (selectedProvider === 'bark' && barkInstalled)) && (
                   <TTSModelPanel
-                    provider={selectedProvider as 'silero' | 'coqui'}
+                    provider={selectedProvider as 'silero' | 'coqui' | 'bark'}
                     serverStatus={ttsServerStatus}
-                    accelerator={selectedProvider === 'silero' ? sileroAccelerator : coquiAccelerator}
+                    accelerator={selectedProvider === 'silero' ? sileroAccelerator : selectedProvider === 'coqui' ? coquiAccelerator : barkAccelerator}
                     availableAccelerators={availableAccelerators}
                     isLoadingModel={isLoadingModel}
                     modelLoadProgress={modelLoadProgress}

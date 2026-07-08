@@ -1549,7 +1549,7 @@ export async function installBark(
 
     const depsResult = await runPipWithProgress(
       targetPython,
-      'transformers==4.46.3 scipy==1.14.1 accelerate==1.1.1 numpy==1.26.4',
+      'transformers==4.46.3 scipy==1.14.1 accelerate==1.1.1 numpy==1.26.4 flask==3.0.3 psutil==6.1.0',
       {
         timeout: 900000,
         onProgress: (info) => {

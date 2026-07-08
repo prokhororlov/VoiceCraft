@@ -128,6 +128,7 @@ interface TTSServerStatus {
   running: boolean
   silero: { ru_loaded: boolean; en_loaded: boolean }
   coqui: { loaded: boolean }
+  bark: { loaded: boolean; backend?: string | null; acoustic_backend?: string | null; codec_backend?: string | null }
   memory_gb: number
   cpu_percent: number
   device: string
@@ -168,8 +169,8 @@ interface ElectronAPI {
   ttsServerStart: () => Promise<{ success: boolean; error?: string }>
   ttsServerStop: () => Promise<{ success: boolean; error?: string }>
   ttsServerStatus: () => Promise<TTSServerStatus>
-  ttsModelLoad: (engine: 'silero' | 'coqui', language?: string) => Promise<{ success: boolean; memory_gb: number; error?: string }>
-  ttsModelUnload: (engine: 'silero' | 'coqui' | 'all', language?: string) => Promise<{ success: boolean; memory_gb: number }>
+  ttsModelLoad: (engine: 'silero' | 'coqui' | 'bark', language?: string) => Promise<{ success: boolean; memory_gb: number; error?: string }>
+  ttsModelUnload: (engine: 'silero' | 'coqui' | 'bark' | 'all', language?: string) => Promise<{ success: boolean; memory_gb: number }>
   ttsSetDevice: (device: string) => Promise<{ success: boolean; error?: string }>
 
   // Setup API
@@ -191,6 +192,7 @@ interface ElectronAPI {
   getAvailableAccelerators: () => Promise<AvailableAccelerators>
   getCurrentSileroAccelerator: () => Promise<AcceleratorConfig | null>
   getCurrentCoquiAccelerator: () => Promise<AcceleratorConfig | null>
+  getCurrentBarkAccelerator: () => Promise<AcceleratorConfig | null>
   reinstallSileroWithAccelerator: (accelerator: AcceleratorType) => Promise<{ success: boolean; error?: string }>
   reinstallCoquiWithAccelerator: (accelerator: AcceleratorType) => Promise<{ success: boolean; error?: string }>
   onReinstallProgress: (callback: (data: ReinstallProgress) => void) => () => void

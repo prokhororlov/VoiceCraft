@@ -61,6 +61,7 @@ export interface TTSServerStatus {
   running: boolean
   silero: { ru_loaded: boolean; en_loaded: boolean }
   coqui: { loaded: boolean }
+  bark: { loaded: boolean; backend?: string | null; acoustic_backend?: string | null; codec_backend?: string | null }
   memory_gb: number
   cpu_percent: number
   device: string

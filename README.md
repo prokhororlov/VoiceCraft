@@ -251,7 +251,7 @@ voicecraft/
 | Piper       | Fast     | Good       | ~50 MB       | CPU      | Balanced option           |
 | Silero      | Medium   | Excellent  | ~100-200 MB  | CPU/GPU  | Natural Russian voices    |
 | Coqui       | Slow     | Premium    | ~2 GB        | CPU/GPU  | Best offline quality      |
-| Bark Small  | Slow     | Experimental | ~1-2 GB     | CPU/GPU  | Expressive short passages |
+| Bark Small  | Slow     | Experimental | ~4.8 GB     | CPU/GPU  | Expressive short passages |
 | ElevenLabs  | Fast     | Premium    | Cloud        | API      | Best overall quality      |
 
 ### GPU Acceleration

@@ -3,7 +3,7 @@ import path from 'path'
 import { exec, spawn, ChildProcess } from 'child_process'
 import { promisify } from 'util'
 import http from 'http'
-import { getResourcesPath, getSileroPythonExecutable, getCoquiPythonExecutable } from './utils'
+import { getResourcesPath, getSileroPythonExecutable, getCoquiPythonExecutable, getBarkPythonExecutable, getBarkAccelerator } from './utils'
 import { getTTSServerScriptContent } from '../setup/utils'
 
 const execAsync = promisify(exec)
@@ -12,10 +12,12 @@ const execAsync = promisify(exec)
 
 const TTS_SERVER_PORT = 5050
 const TTS_SERVER_URL = `http://127.0.0.1:${TTS_SERVER_PORT}`
+type TTSEngine = 'silero' | 'coqui' | 'bark'
 
 let ttsServerProcess: ChildProcess | null = null
 let ttsServerReady = false
 let serverStarting = false // Prevent multiple simultaneous starts
+let ttsServerRuntimeEngine: TTSEngine | null = null
 
 // Model load progress callback
 let modelLoadProgressCallback: ((progress: number, engine: string, language?: string) => void) | null = null
@@ -46,6 +48,12 @@ export interface TTSServerStatus {
   }
   coqui: {
     loaded: boolean
+  }
+  bark: {
+    loaded: boolean
+    backend?: string | null
+    acoustic_backend?: string | null
+    codec_backend?: string | null
   }
   memory_gb: number
   cpu_percent: number
@@ -122,14 +130,32 @@ function ensureTTSServerScript(): string {
   return serverScript
 }
 
-export function getTTSServerPythonExecutable(): string {
-  // Prefer Coqui's venv as it has all dependencies (including TTS module)
-  // Silero's venv doesn't have the TTS module which causes "No module named 'TTS'" error
+export function getTTSServerPythonExecutable(preferredEngine: TTSEngine = 'coqui'): string {
+  if (preferredEngine === 'bark') {
+    return getBarkPythonExecutable()
+  }
+
+  if (preferredEngine === 'coqui') {
+    const coquiExe = getCoquiPythonExecutable()
+    if (fs.existsSync(coquiExe)) return coquiExe
+    const sileroExe = getSileroPythonExecutable()
+    if (fs.existsSync(sileroExe)) return sileroExe
+    const barkExe = getBarkPythonExecutable()
+    if (fs.existsSync(barkExe)) return barkExe
+    return coquiExe
+  }
+
+  // Prefer Coqui's venv for Silero when available because it has the broader
+  // server dependency set; otherwise use Silero's own environment.
   const coquiExe = getCoquiPythonExecutable()
   if (fs.existsSync(coquiExe)) {
     return coquiExe
   }
   return getSileroPythonExecutable()
+}
+
+function getEnginePathFromPython(pythonExe: string): string {
+  return path.dirname(path.dirname(pythonExe))
 }
 
 export async function waitForServer(maxAttempts: number = 60, delayMs: number = 500): Promise<boolean> {
@@ -147,11 +173,16 @@ export async function waitForServer(maxAttempts: number = 60, delayMs: number = 
   return false
 }
 
-export async function startTTSServer(): Promise<void> {
+export async function startTTSServer(preferredEngine: TTSEngine = 'coqui'): Promise<void> {
   // Already running
   if (ttsServerProcess && ttsServerReady) {
-    console.log('TTS Server already running')
-    return
+    if (ttsServerRuntimeEngine !== preferredEngine) {
+      console.log(`TTS Server is running for ${ttsServerRuntimeEngine}; restarting for ${preferredEngine}`)
+      await stopTTSServer()
+    } else {
+      console.log('TTS Server already running')
+      return
+    }
   }
 
   // Prevent multiple simultaneous starts
@@ -167,7 +198,7 @@ export async function startTTSServer(): Promise<void> {
     // Kill any orphan servers first
     await killOrphanTTSServers()
 
-    const pythonExe = getTTSServerPythonExecutable()
+    const pythonExe = getTTSServerPythonExecutable(preferredEngine)
     const serverScript = ensureTTSServerScript()
 
     if (!fs.existsSync(pythonExe)) {
@@ -181,7 +212,14 @@ export async function startTTSServer(): Promise<void> {
     console.log('Starting TTS Server...')
 
     await new Promise<void>((resolve, reject) => {
-      const args = [serverScript, '--port', TTS_SERVER_PORT.toString()]
+      const enginePath = getEnginePathFromPython(pythonExe)
+      const args = [
+        serverScript,
+        '--port', TTS_SERVER_PORT.toString(),
+        '--runtime-engine', preferredEngine,
+        '--engine-path', enginePath,
+        '--accelerator', preferredEngine === 'bark' ? getBarkAccelerator() : 'auto'
+      ]
 
       ttsServerProcess = spawn(pythonExe, args, {
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -216,6 +254,7 @@ export async function startTTSServer(): Promise<void> {
         console.error('TTS Server error:', error)
         ttsServerProcess = null
         ttsServerReady = false
+        ttsServerRuntimeEngine = null
         reject(error)
       })
 
@@ -223,12 +262,14 @@ export async function startTTSServer(): Promise<void> {
         console.log(`TTS Server exited with code ${code}`)
         ttsServerProcess = null
         ttsServerReady = false
+        ttsServerRuntimeEngine = null
       })
 
       // Wait for server to be ready
       waitForServer().then((ready) => {
         if (ready) {
           console.log('TTS Server is ready')
+          ttsServerRuntimeEngine = preferredEngine
           resolve()
         } else {
           reject(new Error('TTS Server failed to start'))
@@ -265,6 +306,7 @@ export async function stopTTSServer(): Promise<void> {
 
   ttsServerProcess = null
   ttsServerReady = false
+  ttsServerRuntimeEngine = null
   serverStarting = false
   console.log('TTS Server stopped')
 }
@@ -277,6 +319,7 @@ export async function getTTSServerStatus(): Promise<TTSServerStatus> {
       running: true,
       silero: data.silero,
       coqui: data.coqui,
+      bark: data.bark || { loaded: false, backend: null },
       memory_gb: data.memory_gb,
       cpu_percent: data.cpu_percent || 0,
       device: data.device,
@@ -291,6 +334,7 @@ export async function getTTSServerStatus(): Promise<TTSServerStatus> {
       running: false,
       silero: { ru_loaded: false, en_loaded: false },
       coqui: { loaded: false },
+      bark: { loaded: false, backend: null },
       memory_gb: 0,
       cpu_percent: 0,
       device: 'unknown',
@@ -304,7 +348,7 @@ export async function getTTSServerStatus(): Promise<TTSServerStatus> {
 }
 
 export async function loadTTSModel(
-  engine: 'silero' | 'coqui',
+  engine: TTSEngine,
   language?: string
 ): Promise<{ success: boolean; memory_gb: number; error?: string }> {
   // Set current loading model for progress tracking
@@ -313,8 +357,8 @@ export async function loadTTSModel(
   try {
     // Start server if not running
     const status = await getTTSServerStatus()
-    if (!status.running) {
-      await startTTSServer()
+    if (!status.running || ttsServerRuntimeEngine !== engine) {
+      await startTTSServer(engine)
     }
 
     const body = JSON.stringify({ engine, language })
@@ -339,7 +383,7 @@ export async function loadTTSModel(
 }
 
 export async function unloadTTSModel(
-  engine: 'silero' | 'coqui' | 'all',
+  engine: TTSEngine | 'all',
   language?: string
 ): Promise<{ success: boolean; memory_gb: number }> {
   try {
@@ -371,7 +415,7 @@ export async function setPreferredDevice(device: string): Promise<{ success: boo
 }
 
 export async function generateViaServer(
-  engine: 'silero' | 'coqui',
+  engine: TTSEngine,
   text: string,
   speaker: string,
   language: string,
@@ -395,7 +439,7 @@ export async function generateViaServer(
   })
 
   // Coqui XTTS is much slower, use 3x timeout (6 minutes instead of 2)
-  const timeout = engine === 'coqui' ? 360000 : 120000
+  const timeout = engine === 'coqui' || engine === 'bark' ? 360000 : 120000
   const audioBuffer = await httpRequestBinary(`${TTS_SERVER_URL}/generate`, 'POST', body, timeout)
 
   // Ensure output directory exists
@@ -409,7 +453,7 @@ export async function generateViaServer(
 
 // Abortable version for preview
 export async function generateViaServerForPreview(
-  engine: 'silero' | 'coqui',
+  engine: TTSEngine,
   text: string,
   speaker: string,
   language: string,
@@ -565,7 +609,7 @@ export function httpRequestBinaryForPreview(url: string, method: string, body?: 
       currentPreviewRequest = null
       reject(err)
     })
-    req.setTimeout(120000, () => {
+    req.setTimeout(360000, () => {
       currentPreviewRequest = null
       req.destroy()
       reject(new Error('Request timeout'))

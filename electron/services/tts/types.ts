@@ -27,6 +27,12 @@ export interface TTSServerStatus {
   coqui: {
     loaded: boolean
   }
+  bark: {
+    loaded: boolean
+    backend?: string | null
+    acoustic_backend?: string | null
+    codec_backend?: string | null
+  }
   memory_gb: number
   cpu_percent: number
   device: string

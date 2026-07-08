@@ -4,7 +4,7 @@ import type { TTSServerStatus, AcceleratorConfig, AcceleratorInfo } from '@/type
 import { useI18n } from '@/i18n'
 
 interface TTSModelPanelProps {
-  provider: 'silero' | 'coqui'
+  provider: 'silero' | 'coqui' | 'bark'
   serverStatus: TTSServerStatus | null
   accelerator: AcceleratorConfig | null
   availableAccelerators: AcceleratorInfo | null
@@ -14,8 +14,8 @@ interface TTSModelPanelProps {
   isReinstalling: boolean
   gpuPopoverOpen: boolean
   onGpuPopoverChange: (open: boolean) => void
-  onLoadModel: (engine: 'silero' | 'coqui', language?: string) => void
-  onUnloadModel: (engine: 'silero' | 'coqui' | 'all', language?: string) => void
+  onLoadModel: (engine: 'silero' | 'coqui' | 'bark', language?: string) => void
+  onUnloadModel: (engine: 'silero' | 'coqui' | 'bark' | 'all', language?: string) => void
   onShowReinstallConfirm: (engine: 'silero' | 'coqui', accelerator: 'cuda' | 'directml') => void
 }
 
@@ -148,6 +148,64 @@ export function TTSModelPanel({
           </div>
         </div>
 
+      </div>
+    )
+  }
+
+  if (provider === 'bark') {
+    const barkBackend = serverStatus?.bark.loaded
+      ? serverStatus.bark.backend || accelerator?.accelerator || 'cpu'
+      : accelerator?.accelerator || 'cpu'
+    const barkOnGpu = barkBackend === 'cuda' || barkBackend === 'directml'
+
+    return (
+      <div className="space-y-3 p-3 border rounded-md bg-gradient-to-b from-muted/40 to-muted/20">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Cpu className="h-3.5 w-3.5" />
+          <span>{t.ttsPanel.loadModelsForGeneration}</span>
+        </div>
+
+        <div className="p-3 rounded-lg border bg-background/50">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <div className="font-medium text-sm">Bark Small</div>
+              <span className="text-xs text-muted-foreground">Suno</span>
+            </div>
+            <div
+              className={`flex items-center gap-1.5 px-2 py-1 text-xs font-medium rounded ${
+                barkOnGpu
+                  ? 'bg-green-500/20 text-green-600 dark:text-green-400'
+                  : 'bg-muted/50 text-muted-foreground'
+              }`}
+            >
+              <Cpu className="h-3 w-3" />
+              {barkBackend.toUpperCase()}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <ModelChip
+              label="Bark Small"
+              isLoaded={serverStatus?.bark.loaded === true}
+              isLoading={isLoadingModel === 'bark'}
+              disabled={isDisabled}
+              onClick={() =>
+                serverStatus?.bark.loaded ? onUnloadModel('bark') : onLoadModel('bark')
+              }
+            />
+          </div>
+
+          <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+            <span>
+              {serverStatus?.bark.loaded
+                ? t.ttsPanel.modelLoadedReady
+                : t.ttsPanel.loadModelToEnable}
+            </span>
+            {serverStatus?.running && (
+              <span className="font-mono">RAM: {serverStatus.memory_gb.toFixed(2)} GB</span>
+            )}
+          </div>
+        </div>
       </div>
     )
   }

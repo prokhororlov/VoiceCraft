@@ -7,9 +7,11 @@ import type { GPUInfo, AvailableAccelerators, AcceleratorType, AcceleratorConfig
 import {
   getSileroPath,
   getCoquiPath,
+  getBarkPath,
   getSileroPathForAccelerator,
   getCoquiPathForAccelerator,
-  setActiveAccelerator
+  setActiveAccelerator,
+  AcceleratedEngine
 } from './paths'
 import { installSilero, installCoqui } from './installers'
 
@@ -112,8 +114,12 @@ export async function getAvailableAccelerators(): Promise<AvailableAccelerators>
 }
 
 // Read current accelerator config from specific accelerator path
-export function getCurrentAccelerator(engine: 'silero' | 'coqui'): AcceleratorConfig | null {
-  const basePath = engine === 'silero' ? getSileroPath() : getCoquiPath()
+export function getCurrentAccelerator(engine: AcceleratedEngine): AcceleratorConfig | null {
+  const basePath = engine === 'silero'
+    ? getSileroPath()
+    : engine === 'coqui'
+      ? getCoquiPath()
+      : getBarkPath()
   const configPath = path.join(basePath, 'accelerator.json')
   try {
     if (existsSync(configPath)) {
